@@ -5,6 +5,7 @@ import '../screens/home_screen.dart';
 import '../screens/inventario_screen.dart';
 
 class AppRoutes {
+  // 1. Ruta inicial en minúsculas para mantener consistencia
   static const initialRoute = '/login';
 
   static final menuOptions = <MenuOptions>[
@@ -25,10 +26,9 @@ class AppRoutes {
   static Map<String, Widget Function(BuildContext)> getAppRoutes() {
     Map<String, Widget Function(BuildContext)> appRoutes = {};
 
-    // Rutas directas
+    // 2. Definición explícita de rutas (todas en minúsculas)
     appRoutes.addAll({
       '/login': (BuildContext context) => const LoginScreen(),
-      '/Login': (BuildContext context) => const LoginScreen(),
       '/home': (BuildContext context) => const HomeScreen(),
       '/inventario': (BuildContext context) => const InventarioScreen(),
     });
@@ -44,15 +44,16 @@ class AppRoutes {
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
       case '/login':
-      case '/Login':
         return MaterialPageRoute(builder: (context) => const LoginScreen());
       case '/inventario':
         return MaterialPageRoute(
           builder: (context) => const InventarioScreen(),
         );
       case '/home':
-      default:
         return MaterialPageRoute(builder: (context) => const HomeScreen());
+      default:
+        // Si no se encuentra la ruta, redirige al Login en lugar de al Home
+        return MaterialPageRoute(builder: (context) => const LoginScreen());
     }
   }
 }

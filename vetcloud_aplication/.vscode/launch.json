@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "VetCloud (Chrome)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "chrome"
+    },
+    {
+      "name": "VetCloud (Android)",
+      "request": "launch",
+      "type": "dart"
+    }
+  ]
+}

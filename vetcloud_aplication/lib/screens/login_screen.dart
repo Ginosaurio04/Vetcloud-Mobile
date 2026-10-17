@@ -1,6 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-
-import '../data/veterinaria_database.dart';
+import 'package:http/http.dart' as http;
+import '../models/cliente.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -27,51 +28,73 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
-    await Future.delayed(const Duration(milliseconds: 500));
 
-    final exito = VeterinariaDatabase.instance.autenticar(
-      _identificadorController.text,
-      _passwordController.text,
-    );
+    // NOTA DE IP:
+    // - Emulador Android: 'http://10.0.2.2:3000/api/login'
+    // - Chrome/Windows/Web: 'http://localhost:3000/api/login'
+    // - Dispositivo Físico por Wi-Fi: 'http://<IP-DE-TU-PC>:3000/api/login'
+    final url = Uri.parse('http://localhost:3000/api/login');
 
-    if (!mounted) return;
-    setState(() => _isLoading = false);
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'username': _identificadorController.text.trim(),
+          'password': _passwordController.text.trim(),
+        }),
+      );
 
-    if (exito) {
-      final usuario = VeterinariaDatabase.instance.usuarioActual!;
+      final data = jsonDecode(response.body);
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200 &&
+          (data['exito'] == true || data['cliente'] != null)) {
+        // Mapea la información del usuario retornada por la API
+        final cliente = Cliente.fromMap(data['cliente']);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('¡Bienvenido a VetCloud, ${cliente.nombreCompleto}!'),
+            backgroundColor: const Color(0xFF0DCF7E),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+
+        Navigator.pushReplacementNamed(context, '/home');
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              data['mensaje'] ?? 'Usuario o contraseña incorrectos',
+            ),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('¡Bienvenido a VetCloud, ${usuario.nombreCompleto}!'),
-          backgroundColor: const Color(0xFF0DCF7E),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      Navigator.pushReplacementNamed(context, '/home');
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Correo o cédula no válidos, o contraseña incorrecta. Demo: usa 123456.',
-          ),
+          content: Text('Error de conexión con el servidor: $e'),
           backgroundColor: Colors.redAccent,
           behavior: SnackBarBehavior.floating,
         ),
       );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
-  }
-
-  void _seleccionarUsuarioRapido(String identificador) {
-    setState(() {
-      _identificadorController.text = identificador;
-      _passwordController.text = VeterinariaDatabase.demoPassword;
-    });
   }
 
   @override
   Widget build(BuildContext context) {
     const primaryColor = Color(0xFF0DCF7E);
     const darkBg = Color(0xFF14191F);
-    final clientes = VeterinariaDatabase.instance.clientes;
 
     return Scaffold(
       backgroundColor: darkBg,
@@ -192,68 +215,6 @@ class _LoginScreenState extends State<LoginScreen> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                  ),
-                  const SizedBox(height: 32),
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E2429),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.white12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.storage, size: 16, color: primaryColor),
-                            SizedBox(width: 6),
-                            Text(
-                              'Cuentas locales de demostración',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        const Text(
-                          'El SQL no contiene contraseñas. Usa 123456; '
-                          'este acceso es solo local y de prueba.',
-                          style: TextStyle(color: Colors.white54, fontSize: 12),
-                        ),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 6,
-                          children: clientes.map((cliente) {
-                            final identificador = cliente.email.isNotEmpty
-                                ? cliente.email
-                                : cliente.cedula;
-                            return ActionChip(
-                              avatar: const Icon(
-                                Icons.person,
-                                size: 14,
-                                color: Colors.black,
-                              ),
-                              label: Text(cliente.nombreCompleto),
-                              backgroundColor: primaryColor.withValues(
-                                alpha: 0.8,
-                              ),
-                              labelStyle: const TextStyle(
-                                color: Colors.black,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              onPressed: () =>
-                                  _seleccionarUsuarioRapido(identificador),
-                            );
-                          }).toList(),
-                        ),
-                      ],
-                    ),
                   ),
                 ],
               ),

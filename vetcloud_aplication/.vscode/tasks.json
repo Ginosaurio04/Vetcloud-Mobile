@@ -1,0 +1,47 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "VetCloud: Compilar APK debug",
+      "type": "process",
+      "command": "flutter",
+      "args": [
+        "build",
+        "apk",
+        "--debug"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "VetCloud: Ejecutar pruebas",
+      "type": "process",
+      "command": "flutter",
+      "args": [
+        "test"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "VetCloud: Analizar",
+      "type": "process",
+      "command": "flutter",
+      "args": [
+        "analyze"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ]
+}
