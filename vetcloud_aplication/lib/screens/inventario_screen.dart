@@ -1,5 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import '../data/veterinaria_database.dart';
+import 'package:http/http.dart' as http;
 import '../models/producto.dart';
 import '../widgets/custom_botton_navigation.dart';
 
@@ -15,6 +16,7 @@ class InventarioScreen extends StatefulWidget {
 class _InventarioScreenState extends State<InventarioScreen> {
   final _searchController = TextEditingController();
   String _categoriaSeleccionada = 'Todos';
+  late Future<List<Producto>> _futureProductos;
 
   final List<String> _categorias = [
     'Todos',
@@ -25,13 +27,84 @@ class _InventarioScreenState extends State<InventarioScreen> {
     'Insumos',
   ];
 
+  // NOTA DE IP: 'http://localhost:3000' para Chrome / Web.
+  // Para emulador Android usa 'http://10.0.2.2:3000'.
+  final String _baseUrl = 'http://localhost:3000/api/productos';
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarProductos();
+  }
+
+  void _cargarProductos() {
+    setState(() {
+      _futureProductos = _obtenerProductos();
+    });
+  }
+
+  Future<List<Producto>> _obtenerProductos() async {
+    final res = await http.get(Uri.parse(_baseUrl));
+    if (res.statusCode == 200) {
+      List<dynamic> body = jsonDecode(res.body);
+      return body.map((item) => Producto.fromMap(item)).toList();
+    } else {
+      throw Exception('Error al cargar inventario');
+    }
+  }
+
+  Future<void> _modificarStock(int id, int cantidad) async {
+    final url = Uri.parse('$_baseUrl/$id/stock');
+    final res = await http.put(
+      url,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'cantidad': cantidad}),
+    );
+    if (res.statusCode == 200) {
+      _cargarProductos();
+    }
+  }
+
+  Future<void> _guardarNuevoProducto(Map<String, dynamic> productoData) async {
+    final res = await http.post(
+      Uri.parse(_baseUrl),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(productoData),
+    );
+
+    if (res.statusCode == 201) {
+      _cargarProductos();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Producto guardado en la Base de Datos'),
+            backgroundColor: Color(0xFF0DCF7E),
+          ),
+        );
+      }
+    } else {
+      final err = jsonDecode(res.body);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(err['mensaje'] ?? 'Error al guardar'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
   }
 
-  void _abrirModalAgregarProducto(BuildContext context) {
+  void _abrirModalAgregarProducto(
+    BuildContext context,
+    List<Producto> listaActual,
+  ) {
     final formKey = GlobalKey<FormState>();
     final nombreCtrl = TextEditingController();
     final codigoCtrl = TextEditingController();
@@ -73,7 +146,7 @@ class _InventarioScreenState extends State<InventarioScreen> {
                           ),
                           SizedBox(width: 8),
                           Text(
-                            'Nuevo Producto de Inventario',
+                            'Nuevo Producto en BD',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 18,
@@ -110,16 +183,11 @@ class _InventarioScreenState extends State<InventarioScreen> {
                                 labelStyle: TextStyle(color: Colors.white70),
                               ),
                               validator: (v) {
-                                final codigo = v?.trim().toUpperCase() ?? '';
-                                if (codigo.isEmpty) return 'Requerido';
-                                final existe = VeterinariaDatabase
-                                    .instance
-                                    .productos
-                                    .any(
-                                      (producto) =>
-                                          producto.codigo.toUpperCase() ==
-                                          codigo,
-                                    );
+                                final cod = v?.trim().toUpperCase() ?? '';
+                                if (cod.isEmpty) return 'Requerido';
+                                final existe = listaActual.any(
+                                  (p) => p.codigo.toUpperCase() == cod,
+                                );
                                 return existe ? 'Código ya existe' : null;
                               },
                             ),
@@ -144,9 +212,8 @@ class _InventarioScreenState extends State<InventarioScreen> {
                                   )
                                   .toList(),
                               onChanged: (val) {
-                                if (val != null) {
+                                if (val != null)
                                   setModalState(() => categoria = val);
-                                }
                               },
                             ),
                           ),
@@ -165,10 +232,8 @@ class _InventarioScreenState extends State<InventarioScreen> {
                                 labelStyle: TextStyle(color: Colors.white70),
                               ),
                               validator: (v) {
-                                final stock = int.tryParse(v ?? '');
-                                return stock == null || stock < 0
-                                    ? 'Ingresa un valor >= 0'
-                                    : null;
+                                final s = int.tryParse(v ?? '');
+                                return s == null || s < 0 ? 'Mínimo 0' : null;
                               },
                             ),
                           ),
@@ -183,10 +248,8 @@ class _InventarioScreenState extends State<InventarioScreen> {
                                 labelStyle: TextStyle(color: Colors.white70),
                               ),
                               validator: (v) {
-                                final stockMinimo = int.tryParse(v ?? '');
-                                return stockMinimo == null || stockMinimo < 0
-                                    ? 'Ingresa un valor >= 0'
-                                    : null;
+                                final sm = int.tryParse(v ?? '');
+                                return sm == null || sm < 0 ? 'Mínimo 0' : null;
                               },
                             ),
                           ),
@@ -208,12 +271,8 @@ class _InventarioScreenState extends State<InventarioScreen> {
                                 labelStyle: TextStyle(color: Colors.white70),
                               ),
                               validator: (v) {
-                                final precio = double.tryParse(v ?? '');
-                                return precio == null ||
-                                        !precio.isFinite ||
-                                        precio < 0
-                                    ? 'Precio inválido'
-                                    : null;
+                                final p = double.tryParse(v ?? '');
+                                return p == null || p < 0 ? 'Inválido' : null;
                               },
                             ),
                           ),
@@ -227,7 +286,7 @@ class _InventarioScreenState extends State<InventarioScreen> {
                                 labelStyle: TextStyle(color: Colors.white70),
                               ),
                               validator: (v) => v == null || v.trim().isEmpty
-                                  ? 'Campo requerido'
+                                  ? 'Requerido'
                                   : null,
                             ),
                           ),
@@ -245,37 +304,22 @@ class _InventarioScreenState extends State<InventarioScreen> {
                         ),
                         onPressed: () {
                           if (formKey.currentState!.validate()) {
-                            final nuevo = Producto(
-                              id: DateTime.now().millisecondsSinceEpoch,
-                              codigo: codigoCtrl.text.trim().toUpperCase(),
-                              nombre: nombreCtrl.text.trim(),
-                              categoria: categoria,
-                              stock: int.parse(stockCtrl.text),
-                              stockMinimo: int.parse(stockMinCtrl.text),
-                              precio: double.parse(precioCtrl.text),
-                              unidad: unidadCtrl.text.trim(),
-                              descripcion: 'Agregado manualmente al inventario',
-                            );
-                            VeterinariaDatabase.instance.agregarProducto(nuevo);
                             Navigator.pop(ctx);
-                            setState(() {});
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Producto "${nuevo.nombre}" agregado con éxito.',
-                                ),
-                                backgroundColor: const Color(0xFF0DCF7E),
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
+                            _guardarNuevoProducto({
+                              'codigo': codigoCtrl.text.trim().toUpperCase(),
+                              'nombre': nombreCtrl.text.trim(),
+                              'categoria': categoria,
+                              'stock': int.parse(stockCtrl.text),
+                              'stock_minimo': int.parse(stockMinCtrl.text),
+                              'precio': double.parse(precioCtrl.text),
+                              'unidad': unidadCtrl.text.trim(),
+                              'descripcion': 'Registrado vía app VetCloud',
+                            });
                           }
                         },
                         child: const Text(
-                          'Guardar Producto',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
+                          'Guardar en BD',
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],
@@ -299,7 +343,6 @@ class _InventarioScreenState extends State<InventarioScreen> {
         return Icons.medical_services_outlined;
       case 'alimentos':
         return Icons.pets;
-      case 'insumos':
       default:
         return Icons.healing;
     }
@@ -311,363 +354,374 @@ class _InventarioScreenState extends State<InventarioScreen> {
     const darkBg = Color(0xFF14191F);
     const cardBg = Color(0xFF1E2429);
 
-    final db = VeterinariaDatabase.instance;
-    final productos = db.productos;
-
-    final query = _searchController.text.trim().toLowerCase();
-    final productosFiltrados = productos.where((p) {
-      final coincideCat =
-          _categoriaSeleccionada == 'Todos' ||
-          p.categoria.toLowerCase() == _categoriaSeleccionada.toLowerCase();
-      final coincideQuery =
-          query.isEmpty ||
-          p.nombre.toLowerCase().contains(query) ||
-          p.codigo.toLowerCase().contains(query);
-      return coincideCat && coincideQuery;
-    }).toList();
-
     return Scaffold(
       backgroundColor: darkBg,
       appBar: AppBar(
         backgroundColor: cardBg,
         elevation: 0,
         title: const Text(
-          'Inventario VetCloud',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
-          ),
+          'Inventario MySQL',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add_circle, color: primaryColor),
-            tooltip: 'Agregar Producto',
-            onPressed: () => _abrirModalAgregarProducto(context),
-          ),
-        ],
       ),
-      body: Column(
-        children: [
-          // Banner de Métricas de Inventario
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            color: cardBg,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _StatMini(
-                  label: 'Total Ítems',
-                  valor: '${db.totalProductos}',
-                  color: primaryColor,
-                ),
-                Container(height: 24, width: 1, color: Colors.white12),
-                _StatMini(
-                  label: 'Bajo Stock',
-                  valor: '${db.totalStockBajo}',
-                  color: db.totalStockBajo > 0
-                      ? Colors.orangeAccent
-                      : Colors.grey,
-                ),
-                Container(height: 24, width: 1, color: Colors.white12),
-                _StatMini(
-                  label: 'Valor Total',
-                  valor: '\$${db.valorTotalInventario.toStringAsFixed(1)}',
-                  color: Colors.white,
-                ),
-              ],
-            ),
-          ),
-
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 10, 16, 0),
-            child: Row(
-              children: [
-                Icon(Icons.info_outline, color: Colors.amber, size: 16),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Inventario de demostración: el SQL no tiene tabla de productos y estos cambios no se guardan.',
-                    style: TextStyle(color: Colors.white60, fontSize: 11),
+      body: FutureBuilder<List<Producto>>(
+        future: _futureProductos,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: primaryColor),
+            );
+          } else if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    color: Colors.redAccent,
+                    size: 48,
                   ),
-                ),
-              ],
-            ),
-          ),
-
-          // Buscador
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (_) => setState(() {}),
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Buscar por producto o código...',
-                hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                prefixIcon: const Icon(Icons.search, color: primaryColor),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(
-                          Icons.clear,
-                          color: Colors.white54,
-                          size: 18,
-                        ),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {});
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: cardBg,
-                contentPadding: const EdgeInsets.symmetric(
-                  vertical: 0,
-                  horizontal: 16,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-          ),
-
-          // Chips de categorías
-          SizedBox(
-            height: 38,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _categorias.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final cat = _categorias[index];
-                final seleccionada = cat == _categoriaSeleccionada;
-                return ChoiceChip(
-                  label: Text(cat),
-                  selected: seleccionada,
-                  selectedColor: primaryColor,
-                  backgroundColor: cardBg,
-                  labelStyle: TextStyle(
-                    color: seleccionada ? Colors.black : Colors.white70,
-                    fontWeight: seleccionada
-                        ? FontWeight.bold
-                        : FontWeight.normal,
-                    fontSize: 12,
+                  const SizedBox(height: 12),
+                  Text(
+                    'Error al conectar con la BD:\n${snapshot.error}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70),
                   ),
-                  onSelected: (_) {
-                    setState(() => _categoriaSeleccionada = cat);
-                  },
-                );
-              },
-            ),
-          ),
-
-          const SizedBox(height: 8),
-
-          // Lista de Productos
-          Expanded(
-            child: productosFiltrados.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No se encontraron productos.',
-                      style: TextStyle(color: Colors.white54),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: _cargarProductos,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
                     ),
-                  )
-                : ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    itemCount: productosFiltrados.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    child: const Text(
+                      'Reintentar',
+                      style: TextStyle(color: Colors.black),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final productos = snapshot.data ?? [];
+
+          final totalProductos = productos.length;
+          final totalStockBajo = productos.where((p) => p.esBajoStock).length;
+          final valorTotal = productos.fold(
+            0.0,
+            (sum, item) => sum + (item.precio * item.stock),
+          );
+
+          final query = _searchController.text.trim().toLowerCase();
+          final productosFiltrados = productos.where((p) {
+            final coincideCat =
+                _categoriaSeleccionada == 'Todos' ||
+                p.categoria.toLowerCase() ==
+                    _categoriaSeleccionada.toLowerCase();
+            final coincideQuery =
+                query.isEmpty ||
+                p.nombre.toLowerCase().contains(query) ||
+                p.codigo.toLowerCase().contains(query);
+            return coincideCat && coincideQuery;
+          }).toList();
+
+          return Scaffold(
+            backgroundColor: darkBg,
+            floatingActionButton: FloatingActionButton(
+              backgroundColor: primaryColor,
+              onPressed: () => _abrirModalAgregarProducto(context, productos),
+              child: const Icon(Icons.add, color: Colors.black),
+            ),
+            body: Column(
+              children: [
+                // Banner de métricas reales
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  color: cardBg,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _StatMini(
+                        label: 'Total Ítems',
+                        valor: '$totalProductos',
+                        color: primaryColor,
+                      ),
+                      Container(height: 24, width: 1, color: Colors.white12),
+                      _StatMini(
+                        label: 'Bajo Stock',
+                        valor: '$totalStockBajo',
+                        color: totalStockBajo > 0
+                            ? Colors.orangeAccent
+                            : Colors.grey,
+                      ),
+                      Container(height: 24, width: 1, color: Colors.white12),
+                      _StatMini(
+                        label: 'Valor Total',
+                        valor: '\$${valorTotal.toStringAsFixed(1)}',
+                        color: Colors.white,
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Buscador
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (_) => setState(() {}),
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'Buscar producto o código...',
+                      hintStyle: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 13,
+                      ),
+                      prefixIcon: const Icon(Icons.search, color: primaryColor),
+                      filled: true,
+                      fillColor: cardBg,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Filtro Categorías
+                SizedBox(
+                  height: 38,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: _categorias.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
                     itemBuilder: (context, index) {
-                      final producto = productosFiltrados[index];
-                      final esBajoStock = producto.esBajoStock;
-                      final esAgotado = producto.esAgotado;
-
-                      Color badgeColor = primaryColor;
-                      String badgeText = 'En Stock';
-                      if (esAgotado) {
-                        badgeColor = Colors.redAccent;
-                        badgeText = 'Agotado';
-                      } else if (esBajoStock) {
-                        badgeColor = Colors.orangeAccent;
-                        badgeText = 'Bajo Stock';
-                      }
-
-                      return Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: cardBg,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: esBajoStock || esAgotado
-                                ? badgeColor.withValues(alpha: 0.4)
-                                : Colors.white10,
-                          ),
+                      final cat = _categorias[index];
+                      final sel = cat == _categoriaSeleccionada;
+                      return ChoiceChip(
+                        label: Text(cat),
+                        selected: sel,
+                        selectedColor: primaryColor,
+                        backgroundColor: cardBg,
+                        labelStyle: TextStyle(
+                          color: sel ? Colors.black : Colors.white70,
+                          fontSize: 12,
                         ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 44,
-                              height: 44,
+                        onSelected: (_) =>
+                            setState(() => _categoriaSeleccionada = cat),
+                      );
+                    },
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                // Lista dinámicamente actualizada desde MySQL
+                Expanded(
+                  child: productosFiltrados.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'No hay productos registrados en MySQL',
+                            style: TextStyle(color: Colors.white54),
+                          ),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                          itemCount: productosFiltrados.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (context, index) {
+                            final p = productosFiltrados[index];
+                            final esBajo = p.esBajoStock;
+                            final esAgotado = p.esAgotado;
+
+                            Color badgeColor = primaryColor;
+                            String badgeText = 'En Stock';
+                            if (esAgotado) {
+                              badgeColor = Colors.redAccent;
+                              badgeText = 'Agotado';
+                            } else if (esBajo) {
+                              badgeColor = Colors.orangeAccent;
+                              badgeText = 'Bajo Stock';
+                            }
+
+                            return Container(
+                              padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: primaryColor.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(10),
+                                color: cardBg,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: esBajo || esAgotado
+                                      ? badgeColor.withValues(alpha: 0.4)
+                                      : Colors.white10,
+                                ),
                               ),
-                              child: Icon(
-                                _obtenerIconoCategoria(producto.categoria),
-                                color: primaryColor,
-                                size: 24,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              child: Row(
                                 children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          producto.nombre,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14,
-                                          ),
-                                        ),
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: primaryColor.withValues(
+                                        alpha: 0.15,
                                       ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Icon(
+                                      _obtenerIconoCategoria(p.categoria),
+                                      color: primaryColor,
+                                      size: 24,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                p.nombre,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            ),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: badgeColor.withValues(
+                                                  alpha: 0.2,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                                border: Border.all(
+                                                  color: badgeColor,
+                                                  width: 0.8,
+                                                ),
+                                              ),
+                                              child: Text(
+                                                badgeText,
+                                                style: TextStyle(
+                                                  color: badgeColor,
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                        decoration: BoxDecoration(
-                                          color: badgeColor.withValues(
-                                            alpha: 0.2,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            6,
-                                          ),
-                                          border: Border.all(
-                                            color: badgeColor,
-                                            width: 0.8,
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          '${p.codigo} • ${p.categoria} (${p.unidad})',
+                                          style: const TextStyle(
+                                            color: Colors.white60,
+                                            fontSize: 11,
                                           ),
                                         ),
-                                        child: Text(
-                                          badgeText,
-                                          style: TextStyle(
-                                            color: badgeColor,
-                                            fontSize: 10,
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '\$${p.precio.toStringAsFixed(2)}',
+                                          style: const TextStyle(
+                                            color: primaryColor,
                                             fontWeight: FontWeight.bold,
+                                            fontSize: 13,
                                           ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+
+                                  // Botones interactivos que sincronizan con MySQL
+                                  Column(
+                                    children: [
+                                      Row(
+                                        children: [
+                                          InkWell(
+                                            onTap: () =>
+                                                _modificarStock(p.id, -1),
+                                            child: Container(
+                                              padding: const EdgeInsets.all(4),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white10,
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                              ),
+                                              child: const Icon(
+                                                Icons.remove,
+                                                size: 16,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                            ),
+                                            child: Text(
+                                              '${p.stock}',
+                                              style: TextStyle(
+                                                color: badgeColor,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 15,
+                                              ),
+                                            ),
+                                          ),
+                                          InkWell(
+                                            onTap: () =>
+                                                _modificarStock(p.id, 1),
+                                            child: Container(
+                                              padding: const EdgeInsets.all(4),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white10,
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                              ),
+                                              child: const Icon(
+                                                Icons.add,
+                                                size: 16,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Mín: ${p.stockMinimo}',
+                                        style: const TextStyle(
+                                          color: Colors.white38,
+                                          fontSize: 10,
                                         ),
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '${producto.codigo} • ${producto.categoria} • ${producto.unidad}',
-                                    style: const TextStyle(
-                                      color: Colors.white60,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '\$${producto.precio.toStringAsFixed(2)}',
-                                    style: const TextStyle(
-                                      color: primaryColor,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                    ),
-                                  ),
                                 ],
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            // Control de Stock (+ y -)
-                            Column(
-                              children: [
-                                Row(
-                                  children: [
-                                    InkWell(
-                                      onTap: () {
-                                        setState(() {
-                                          db.modificarStock(producto.id, -1);
-                                        });
-                                      },
-                                      borderRadius: BorderRadius.circular(6),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white10,
-                                          borderRadius: BorderRadius.circular(
-                                            6,
-                                          ),
-                                        ),
-                                        child: const Icon(
-                                          Icons.remove,
-                                          size: 16,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                      ),
-                                      child: Text(
-                                        '${producto.stock}',
-                                        style: TextStyle(
-                                          color: badgeColor,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 15,
-                                        ),
-                                      ),
-                                    ),
-                                    InkWell(
-                                      onTap: () {
-                                        setState(() {
-                                          db.modificarStock(producto.id, 1);
-                                        });
-                                      },
-                                      borderRadius: BorderRadius.circular(6),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white10,
-                                          borderRadius: BorderRadius.circular(
-                                            6,
-                                          ),
-                                        ),
-                                        child: const Icon(
-                                          Icons.add,
-                                          size: 16,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Mín: ${producto.stockMinimo}',
-                                  style: const TextStyle(
-                                    color: Colors.white38,
-                                    fontSize: 10,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                            );
+                          },
                         ),
-                      );
-                    },
-                  ),
-          ),
-        ],
+                ),
+              ],
+            ),
+          );
+        },
       ),
       bottomNavigationBar: const CustomBottomNavigation(currentIndex: 1),
     );

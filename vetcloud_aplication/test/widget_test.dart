@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vetcloud_aplication/data/veterinaria_database.dart';
 import 'package:vetcloud_aplication/main.dart';
 
 void main() {
@@ -21,14 +20,5 @@ void main() {
 
     expect(find.text('Bienvenido de vuelta,'), findsOneWidget);
     expect(find.text('Gino Cova'), findsWidgets);
-  });
-
-  test('Demo login requires the demo password and matches SQL clients', () {
-    final database = VeterinariaDatabase.instance;
-
-    expect(database.autenticar('gino.cova@email.com', 'incorrecta'), isFalse);
-    expect(database.autenticar('cuenta-inexistente', '123456'), isFalse);
-    expect(database.autenticar('V12345678', '123456'), isTrue);
-    expect(database.usuarioActual?.nombreCompleto, 'Gino Cova');
   });
 }
