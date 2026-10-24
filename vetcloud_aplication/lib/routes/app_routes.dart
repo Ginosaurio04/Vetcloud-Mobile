@@ -21,6 +21,18 @@ class AppRoutes {
       title: 'Inventario',
       screen: const InventarioScreen(),
     ),
+    MenuOptions(
+      route: '/cliente',
+      icon: Icons.person_outline,
+      title: 'Cliente',
+      screen: const HomeScreen(), // Cambia esto a la pantalla correspondiente
+    ),
+    MenuOptions(
+      route: '/cita',
+      icon: Icons.calendar_today_outlined,
+      title: 'Cita',
+      screen: const HomeScreen(), // Cambia esto a la pantalla correspondiente
+    ),
   ];
 
   static Map<String, Widget Function(BuildContext)> getAppRoutes() {
@@ -31,6 +43,8 @@ class AppRoutes {
       '/login': (BuildContext context) => const LoginScreen(),
       '/home': (BuildContext context) => const HomeScreen(),
       '/inventario': (BuildContext context) => const InventarioScreen(),
+      '/cliente': (BuildContext context) => const HomeScreen(),
+      '/cita': (BuildContext context) => const HomeScreen(),
     });
 
     // Rutas dinámicas desde menuOptions
@@ -50,6 +64,10 @@ class AppRoutes {
           builder: (context) => const InventarioScreen(),
         );
       case '/home':
+        return MaterialPageRoute(builder: (context) => const HomeScreen());
+      case '/cliente':
+        return MaterialPageRoute(builder: (context) => const HomeScreen());
+      case '/cita':
         return MaterialPageRoute(builder: (context) => const HomeScreen());
       default:
         // Si no se encuentra la ruta, redirige al Login en lugar de al Home

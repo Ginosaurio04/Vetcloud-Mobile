@@ -26,8 +26,8 @@ db.connect((err) => {
   }
   console.log('¡Conexión exitosa a MySQL de XAMPP!');
 
-  // Crear la tabla de productos automáticamente si no existe
-  const sqlCrearTabla = `
+  // 1. Crear tabla productos si no existe
+  const sqlCrearTablaProductos = `
     CREATE TABLE IF NOT EXISTS productos (
       id INT AUTO_INCREMENT PRIMARY KEY,
       codigo VARCHAR(50) UNIQUE NOT NULL,
@@ -40,8 +40,58 @@ db.connect((err) => {
       descripcion TEXT
     );
   `;
-  db.query(sqlCrearTabla, (err) => {
+  db.query(sqlCrearTablaProductos, (err) => {
     if (err) console.error('Error al verificar/crear tabla productos:', err.message);
+  });
+
+  // 2. Crear tabla citas si no existe
+  const sqlCrearTablaCitas = `
+    CREATE TABLE IF NOT EXISTS citas (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      cliente VARCHAR(100) NOT NULL,
+      mascota VARCHAR(50) NOT NULL,
+      servicio VARCHAR(100) NOT NULL,
+      fecha VARCHAR(20) NOT NULL,
+      hora VARCHAR(20) NOT NULL,
+      estado VARCHAR(30) DEFAULT 'Pendiente',
+      notas TEXT
+    );
+  `;
+  db.query(sqlCrearTablaCitas, (err) => {
+    if (err) console.error('Error al verificar/crear tabla citas:', err.message);
+  });
+
+  // 3. Crear tabla ventas si no existe
+  const sqlCrearVentas = `
+    CREATE TABLE IF NOT EXISTS ventas (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      cliente VARCHAR(100) NOT NULL,
+      fecha VARCHAR(30) NOT NULL,
+      subtotal DECIMAL(10,2) NOT NULL,
+      iva DECIMAL(10,2) NOT NULL,
+      total DECIMAL(10,2) NOT NULL,
+      metodo_pago VARCHAR(50) DEFAULT 'Efectivo'
+    );
+  `;
+  db.query(sqlCrearVentas, (err) => {
+    if (err) console.error('Error al verificar/crear tabla ventas:', err.message);
+  });
+
+  // 4. Crear tabla detalles_venta si no existe
+  const sqlCrearDetallesVenta = `
+    CREATE TABLE IF NOT EXISTS detalles_venta (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      venta_id INT NOT NULL,
+      producto_id INT NOT NULL,
+      producto_nombre VARCHAR(100) NOT NULL,
+      cantidad INT NOT NULL,
+      precio_unitario DECIMAL(10,2) NOT NULL,
+      subtotal DECIMAL(10,2) NOT NULL,
+      FOREIGN KEY (venta_id) REFERENCES ventas(id) ON DELETE CASCADE
+    );
+  `;
+  db.query(sqlCrearDetallesVenta, (err) => {
+    if (err) console.error('Error al verificar/crear tabla detalles_venta:', err.message);
   });
 });
 
@@ -141,6 +191,63 @@ app.post('/api/login', (req, res) => {
 });
 
 // ==========================================
+// ENDPOINTS DE CITAS MÉDICAS
+// ==========================================
+
+// OBTENER todas las citas (GET)
+app.get('/api/citas', (req, res) => {
+  const sql = 'SELECT * FROM citas ORDER BY id DESC';
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error('❌ Error al consultar citas:', err.message);
+      return res.status(500).json({ error: err.message });
+    }
+    res.json(results);
+  });
+});
+
+// CREAR una nueva cita (POST)
+app.post('/api/citas', (req, res) => {
+  const { cliente, mascota, servicio, fecha, hora, notas } = req.body;
+  const horaRegistro = new Date().toLocaleTimeString();
+
+  const sql = `
+    INSERT INTO citas (cliente, mascota, servicio, fecha, hora, notas)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `;
+  db.query(sql, [cliente, mascota, servicio, fecha, hora, notas], (err, result) => {
+    if (err) {
+      console.error('❌ Error al agendar cita:', err.message);
+      return res.status(500).json({ error: err.message });
+    }
+    console.log(`\n📅 [${horaRegistro}] NUEVA CITA REGISTRADA`);
+    console.log(`> Paciente: ${mascota} (Dueño: ${cliente})`);
+    console.log(`> Servicio: ${servicio} el ${fecha} a las ${hora}`);
+    
+    res.status(201).json({ mensaje: 'Cita agendada con éxito', id: result.insertId });
+  });
+});
+
+// CAMBIAR estado de la cita (PUT)
+app.put('/api/citas/:id/estado', (req, res) => {
+  const { id } = req.params;
+  const { estado } = req.body;
+  const horaCambio = new Date().toLocaleTimeString();
+
+  const sql = 'UPDATE citas SET estado = ? WHERE id = ?';
+  db.query(sql, [estado, id], (err) => {
+    if (err) {
+      console.error('❌ Error al actualizar estado de la cita:', err.message);
+      return res.status(500).json({ error: err.message });
+    }
+    console.log(`\n🔄 [${horaCambio}] ESTADO DE CITA ACTUALIZADO`);
+    console.log(`> Cita ID #${id} cambiada a: "${estado}"`);
+    
+    res.json({ mensaje: 'Estado actualizado correctamente' });
+  });
+});
+
+// ==========================================
 // ENDPOINTS DE INVENTARIO (PRODUCTOS)
 // ==========================================
 
@@ -193,6 +300,54 @@ app.put('/api/productos/:id/stock', (req, res) => {
       return res.status(500).json({ mensaje: 'Error al actualizar el stock', error: err.message });
     }
     res.json({ mensaje: 'Stock actualizado con éxito' });
+  });
+});
+
+// ==========================================
+// ENDPOINTS DE FACTURACIÓN Y VENTAS
+// ==========================================
+
+// PROCESAR FACTURA / VENTA (POST)
+app.post('/api/ventas', (req, res) => {
+  const { cliente, items, subtotal, iva, total, metodo_pago } = req.body;
+  const fecha = new Date().toLocaleString();
+
+  const sqlVenta = 'INSERT INTO ventas (cliente, fecha, subtotal, iva, total, metodo_pago) VALUES (?, ?, ?, ?, ?, ?)';
+  
+  db.query(sqlVenta, [cliente, fecha, subtotal, iva, total, metodo_pago], (err, result) => {
+    if (err) {
+      console.error('❌ Error al registrar venta:', err.message);
+      return res.status(500).json({ error: err.message });
+    }
+
+    const ventaId = result.insertId;
+
+    // Registrar cada detalle de la compra y descontar stock del inventario
+    items.forEach((item) => {
+      const sqlDetalle = 'INSERT INTO detalles_venta (venta_id, producto_id, producto_nombre, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?, ?)';
+      db.query(sqlDetalle, [ventaId, item.producto_id, item.nombre, item.cantidad, item.precio, item.subtotal]);
+
+      const sqlStock = 'UPDATE productos SET stock = GREATEST(0, stock - ?) WHERE id = ?';
+      db.query(sqlStock, [item.cantidad, item.producto_id]);
+    });
+
+    console.log(`\n🧾 [${fecha}] NUEVA FACTURA REGISTRADA (#${ventaId})`);
+    console.log(`> Cliente: ${cliente} | Total: $${total} USD (${metodo_pago})`);
+    console.log(`> Ítems vendidos: ${items.length}`);
+
+    res.status(201).json({ mensaje: 'Factura procesada con éxito', ventaId });
+  });
+});
+
+// OBTENER HISTORIAL DE VENTAS (GET)
+app.get('/api/ventas', (req, res) => {
+  const sql = 'SELECT * FROM ventas ORDER BY id DESC';
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error('❌ Error al obtener ventas:', err.message);
+      return res.status(500).json({ error: err.message });
+    }
+    res.json(results);
   });
 });
 

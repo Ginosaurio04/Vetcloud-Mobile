@@ -31,6 +31,12 @@ class CustomBottomNavigation extends StatelessWidget {
           case 1:
             Navigator.pushReplacementNamed(context, '/inventario');
             break;
+          case 2:
+            Navigator.pushReplacementNamed(context, '/cliente');
+            break;
+          case 3:
+            Navigator.pushReplacementNamed(context, '/cita');
+            break;
         }
       },
     );
