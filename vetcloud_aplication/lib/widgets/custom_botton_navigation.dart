@@ -14,13 +14,25 @@ class CustomBottomNavigation extends StatelessWidget {
         icon: Icon(Icons.inventory_2_outlined),
         label: 'Inventario',
       ),
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.person_outline),
+        label: 'Cliente',
+      ),
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.calendar_today_outlined),
+        label: 'Cita',
+      ),
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.receipt_long_outlined),
+        label: 'Factura',
+      ),
     ];
 
     final validatedIndex = max(0, min(currentIndex, items.length - 1));
 
     return BottomNavigationBar(
       items: items,
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.white,
       currentIndex: validatedIndex,
       selectedItemColor: const Color.fromARGB(255, 13, 207, 126),
       onTap: (index) {
@@ -37,6 +49,8 @@ class CustomBottomNavigation extends StatelessWidget {
           case 3:
             Navigator.pushReplacementNamed(context, '/cita');
             break;
+          case 4:
+            Navigator.pushReplacementNamed(context, '/factura');
         }
       },
     );

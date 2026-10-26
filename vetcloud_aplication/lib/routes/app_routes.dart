@@ -3,6 +3,9 @@ import '../models/menu_options.dart';
 import '../screens/login_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/inventario_screen.dart';
+import '../screens/clientes_screen.dart';
+import '../screens/citas_screen.dart';
+import '../screens/factura_screen.dart';
 
 class AppRoutes {
   // 1. Ruta inicial en minúsculas para mantener consistencia
@@ -25,13 +28,21 @@ class AppRoutes {
       route: '/cliente',
       icon: Icons.person_outline,
       title: 'Cliente',
-      screen: const HomeScreen(), // Cambia esto a la pantalla correspondiente
+      screen:
+          const ClientesScreen(), // Cambia esto a la pantalla correspondiente
     ),
     MenuOptions(
       route: '/cita',
       icon: Icons.calendar_today_outlined,
       title: 'Cita',
-      screen: const HomeScreen(), // Cambia esto a la pantalla correspondiente
+      screen: const CitasScreen(), // Cambia esto a la pantalla correspondiente
+    ),
+    MenuOptions(
+      route: '/factura',
+      icon: Icons.receipt_long_outlined,
+      title: 'Factura',
+      screen:
+          const FacturaScreen(), // Cambia esto a la pantalla correspondiente
     ),
   ];
 
@@ -45,6 +56,7 @@ class AppRoutes {
       '/inventario': (BuildContext context) => const InventarioScreen(),
       '/cliente': (BuildContext context) => const HomeScreen(),
       '/cita': (BuildContext context) => const HomeScreen(),
+      '/factura': (BuildContext context) => const HomeScreen(),
     });
 
     // Rutas dinámicas desde menuOptions
@@ -68,6 +80,8 @@ class AppRoutes {
       case '/cliente':
         return MaterialPageRoute(builder: (context) => const HomeScreen());
       case '/cita':
+        return MaterialPageRoute(builder: (context) => const HomeScreen());
+      case '/factura':
         return MaterialPageRoute(builder: (context) => const HomeScreen());
       default:
         // Si no se encuentra la ruta, redirige al Login en lugar de al Home

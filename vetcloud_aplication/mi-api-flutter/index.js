@@ -18,81 +18,13 @@ const db = mysql.createConnection({
   port: 3306
 });
 
-// Probar conexión y preparar tablas
+// Probar conexión a la Base de Datos
 db.connect((err) => {
   if (err) {
     console.error('Error al conectar a MySQL:', err.message);
     return;
   }
   console.log('¡Conexión exitosa a MySQL de XAMPP!');
-
-  // 1. Crear tabla productos si no existe
-  const sqlCrearTablaProductos = `
-    CREATE TABLE IF NOT EXISTS productos (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      codigo VARCHAR(50) UNIQUE NOT NULL,
-      nombre VARCHAR(100) NOT NULL,
-      categoria VARCHAR(50) NOT NULL,
-      stock INT DEFAULT 0,
-      stock_minimo INT DEFAULT 5,
-      precio DECIMAL(10, 2) NOT NULL,
-      unidad VARCHAR(30) DEFAULT 'Unidad',
-      descripcion TEXT
-    );
-  `;
-  db.query(sqlCrearTablaProductos, (err) => {
-    if (err) console.error('Error al verificar/crear tabla productos:', err.message);
-  });
-
-  // 2. Crear tabla citas si no existe
-  const sqlCrearTablaCitas = `
-    CREATE TABLE IF NOT EXISTS citas (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      cliente VARCHAR(100) NOT NULL,
-      mascota VARCHAR(50) NOT NULL,
-      servicio VARCHAR(100) NOT NULL,
-      fecha VARCHAR(20) NOT NULL,
-      hora VARCHAR(20) NOT NULL,
-      estado VARCHAR(30) DEFAULT 'Pendiente',
-      notas TEXT
-    );
-  `;
-  db.query(sqlCrearTablaCitas, (err) => {
-    if (err) console.error('Error al verificar/crear tabla citas:', err.message);
-  });
-
-  // 3. Crear tabla ventas si no existe
-  const sqlCrearVentas = `
-    CREATE TABLE IF NOT EXISTS ventas (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      cliente VARCHAR(100) NOT NULL,
-      fecha VARCHAR(30) NOT NULL,
-      subtotal DECIMAL(10,2) NOT NULL,
-      iva DECIMAL(10,2) NOT NULL,
-      total DECIMAL(10,2) NOT NULL,
-      metodo_pago VARCHAR(50) DEFAULT 'Efectivo'
-    );
-  `;
-  db.query(sqlCrearVentas, (err) => {
-    if (err) console.error('Error al verificar/crear tabla ventas:', err.message);
-  });
-
-  // 4. Crear tabla detalles_venta si no existe
-  const sqlCrearDetallesVenta = `
-    CREATE TABLE IF NOT EXISTS detalles_venta (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      venta_id INT NOT NULL,
-      producto_id INT NOT NULL,
-      producto_nombre VARCHAR(100) NOT NULL,
-      cantidad INT NOT NULL,
-      precio_unitario DECIMAL(10,2) NOT NULL,
-      subtotal DECIMAL(10,2) NOT NULL,
-      FOREIGN KEY (venta_id) REFERENCES ventas(id) ON DELETE CASCADE
-    );
-  `;
-  db.query(sqlCrearDetallesVenta, (err) => {
-    if (err) console.error('Error al verificar/crear tabla detalles_venta:', err.message);
-  });
 });
 
 // Ruta raíz de prueba
@@ -101,15 +33,25 @@ app.get('/', (req, res) => {
 });
 
 // ==========================================
-// ENDPOINTS DE CLIENTES
+// ENDPOINTS DE CLIENTES (Estructura BD Real)
 // ==========================================
 
 // OBTENER todos los clientes (GET)
+// Mapea id_cliente -> id y nombre_completo -> nombre
 app.get('/api/clientes', (req, res) => {
-  const sql = 'SELECT * FROM clientes';
+  const sql = `
+    SELECT 
+      id_cliente AS id, 
+      nombre_completo AS nombre, 
+      telefono, 
+      'Mascota' AS mascota 
+    FROM clientes 
+    ORDER BY id_cliente DESC
+  `;
   
   db.query(sql, (err, result) => {
     if (err) {
+      console.error('❌ Error al consultar clientes:', err.message);
       return res.status(500).json({ error: err.message });
     }
     res.json(result);
@@ -117,12 +59,14 @@ app.get('/api/clientes', (req, res) => {
 });
 
 // CREAR un cliente (POST)
+// Inserta en nombre_completo y telefono
 app.post('/api/clientes', (req, res) => {
-  const { nombre, telefono, mascota } = req.body;
-  const sql = 'INSERT INTO clientes (nombre, telefono, mascota) VALUES (?, ?, ?)';
+  const { nombre, telefono } = req.body;
+  const sql = 'INSERT INTO clientes (nombre_completo, telefono) VALUES (?, ?)';
 
-  db.query(sql, [nombre, telefono, mascota], (err, result) => {
+  db.query(sql, [nombre, telefono], (err, result) => {
     if (err) {
+      console.error('❌ Error al crear cliente:', err.message);
       return res.status(500).json({ error: err.message });
     }
     res.status(201).json({ 
@@ -140,7 +84,6 @@ app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
   const horaIntento = new Date().toLocaleTimeString();
 
-  // Registro detallado en consola
   console.log(`\n========================================`);
   console.log(`[${horaIntento}] INTENTO DE INICIO DE SESIÓN`);
   console.log(`> Usuario / Correo ingresado: "${username}"`);
@@ -191,12 +134,26 @@ app.post('/api/login', (req, res) => {
 });
 
 // ==========================================
-// ENDPOINTS DE CITAS MÉDICAS
+// ENDPOINTS DE CITAS MÉDICAS (Estructura BD Real)
 // ==========================================
 
 // OBTENER todas las citas (GET)
+// Formatea fecha_cita, tipo_servicio u observaciones a las propiedades de Flutter
 app.get('/api/citas', (req, res) => {
-  const sql = 'SELECT * FROM citas ORDER BY id DESC';
+  const sql = `
+    SELECT 
+      id_cita AS id,
+      'Cliente General' AS cliente,
+      CONCAT('Mascota #', id_mascota) AS mascota,
+      tipo_servicio AS servicio,
+      DATE_FORMAT(fecha_cita, '%d/%m/%Y') AS fecha,
+      TIME_FORMAT(fecha_cita, '%h:%i %p') AS hora,
+      estado,
+      COALESCE(observaciones, 'Sin observaciones') AS notas
+    FROM citas 
+    ORDER BY id_cita DESC
+  `;
+  
   db.query(sql, (err, results) => {
     if (err) {
       console.error('❌ Error al consultar citas:', err.message);
@@ -207,22 +164,27 @@ app.get('/api/citas', (req, res) => {
 });
 
 // CREAR una nueva cita (POST)
+// Adapta la entrada para guardar en fecha_cita, tipo_servicio y observaciones
 app.post('/api/citas', (req, res) => {
-  const { cliente, mascota, servicio, fecha, hora, notas } = req.body;
+  const { servicio, fecha, hora, notas } = req.body;
   const horaRegistro = new Date().toLocaleTimeString();
 
+  // Se formatea fecha y hora al standard DATETIME 'YYYY-MM-DD HH:MM:SS'
+  const fechaCita = `${fecha} ${hora}`;
+  const idMascotaPorDefecto = 1; 
+
   const sql = `
-    INSERT INTO citas (cliente, mascota, servicio, fecha, hora, notas)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO citas (id_mascota, fecha_cita, tipo_servicio, estado, observaciones)
+    VALUES (?, ?, ?, 'Pendiente', ?)
   `;
-  db.query(sql, [cliente, mascota, servicio, fecha, hora, notas], (err, result) => {
+  
+  db.query(sql, [idMascotaPorDefecto, fechaCita, servicio, notas || 'Sin observaciones'], (err, result) => {
     if (err) {
       console.error('❌ Error al agendar cita:', err.message);
       return res.status(500).json({ error: err.message });
     }
     console.log(`\n📅 [${horaRegistro}] NUEVA CITA REGISTRADA`);
-    console.log(`> Paciente: ${mascota} (Dueño: ${cliente})`);
-    console.log(`> Servicio: ${servicio} el ${fecha} a las ${hora}`);
+    console.log(`> Servicio: ${servicio} | Fecha/Hora: ${fechaCita}`);
     
     res.status(201).json({ mensaje: 'Cita agendada con éxito', id: result.insertId });
   });
@@ -234,7 +196,7 @@ app.put('/api/citas/:id/estado', (req, res) => {
   const { estado } = req.body;
   const horaCambio = new Date().toLocaleTimeString();
 
-  const sql = 'UPDATE citas SET estado = ? WHERE id = ?';
+  const sql = 'UPDATE citas SET estado = ? WHERE id_cita = ?';
   db.query(sql, [estado, id], (err) => {
     if (err) {
       console.error('❌ Error al actualizar estado de la cita:', err.message);
@@ -291,7 +253,7 @@ app.post('/api/productos', (req, res) => {
 // ACTUALIZAR el stock (+1 o -1) de un producto (PUT)
 app.put('/api/productos/:id/stock', (req, res) => {
   const { id } = req.params;
-  const { cantidad } = req.body; // Recibe +1 o -1
+  const { cantidad } = req.body;
 
   const sql = 'UPDATE productos SET stock = GREATEST(0, stock + ?) WHERE id = ?';
 
@@ -322,18 +284,18 @@ app.post('/api/ventas', (req, res) => {
 
     const ventaId = result.insertId;
 
-    // Registrar cada detalle de la compra y descontar stock del inventario
-    items.forEach((item) => {
-      const sqlDetalle = 'INSERT INTO detalles_venta (venta_id, producto_id, producto_nombre, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?, ?)';
-      db.query(sqlDetalle, [ventaId, item.producto_id, item.nombre, item.cantidad, item.precio, item.subtotal]);
+    if (Array.isArray(items)) {
+      items.forEach((item) => {
+        const sqlDetalle = 'INSERT INTO detalles_venta (venta_id, producto_id, producto_nombre, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?, ?)';
+        db.query(sqlDetalle, [ventaId, item.producto_id, item.nombre, item.cantidad, item.precio, item.subtotal]);
 
-      const sqlStock = 'UPDATE productos SET stock = GREATEST(0, stock - ?) WHERE id = ?';
-      db.query(sqlStock, [item.cantidad, item.producto_id]);
-    });
+        const sqlStock = 'UPDATE productos SET stock = GREATEST(0, stock - ?) WHERE id = ?';
+        db.query(sqlStock, [item.cantidad, item.producto_id]);
+      });
+    }
 
     console.log(`\n🧾 [${fecha}] NUEVA FACTURA REGISTRADA (#${ventaId})`);
     console.log(`> Cliente: ${cliente} | Total: $${total} USD (${metodo_pago})`);
-    console.log(`> Ítems vendidos: ${items.length}`);
 
     res.status(201).json({ mensaje: 'Factura procesada con éxito', ventaId });
   });
