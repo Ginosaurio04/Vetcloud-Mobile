@@ -30,10 +30,11 @@ class _ClientesScreenState extends State<ClientesScreen> {
     });
   }
 
-  Future<List<dynamic>> _obtenerClientes() async {
+  Future<List> _obtenerClientes() async {
     final res = await http.get(Uri.parse(_baseUrl));
     if (res.statusCode == 200) {
-      return jsonDecode(res.body) as List<dynamic>;
+      final List<dynamic> data = jsonDecode(res.body);
+      return data.map((item) => Map<String, dynamic>.from(item)).toList();
     } else {
       throw Exception('Error al conectar con el servidor');
     }

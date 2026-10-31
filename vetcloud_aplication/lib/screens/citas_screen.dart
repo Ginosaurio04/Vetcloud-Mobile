@@ -16,12 +16,13 @@ class CitasScreen extends StatefulWidget {
 class _CitasScreenState extends State<CitasScreen> {
   final _searchController = TextEditingController();
   late Future<List<dynamic>> _futureCitas;
-  List<dynamic> _clientes = [];
+  List<dynamic> _clientesMascotas = [];
   String _filtroEstado = 'Todos';
 
   // URLs de los endpoints de Node.js
   final String _baseUrl = 'http://localhost:3000/api/citas';
-  final String _baseUrlClientes = 'http://localhost:3000/api/clientes';
+  final String _baseUrlClientesMascotas =
+      'http://localhost:3000/api/clientes-mascotas-citas';
 
   // Estado del Calendario
   CalendarFormat _calendarFormat = CalendarFormat.month;
@@ -54,13 +55,16 @@ class _CitasScreenState extends State<CitasScreen> {
 
   Future<void> _cargarClientes() async {
     try {
-      final res = await http.get(Uri.parse(_baseUrlClientes));
+      final res = await http.get(Uri.parse(_baseUrlClientesMascotas));
       if (res.statusCode == 200) {
+        final List<dynamic> body = jsonDecode(res.body);
         setState(() {
-          _clientes = jsonDecode(res.body) as List<dynamic>;
+          _clientesMascotas = body;
         });
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Error al cargar opciones de citas: $e');
+    }
   }
 
   Future<List<dynamic>> _obtenerCitas() async {
@@ -123,7 +127,7 @@ class _CitasScreenState extends State<CitasScreen> {
 
   void _abrirModalAgendarCita(BuildContext context) {
     final formKey = GlobalKey<FormState>();
-    Map<String, dynamic>? clienteSeleccionado;
+    int? idMascotaSeleccionada;
     final notasCtrl = TextEditingController();
 
     String servicioSeleccionado = _servicios.first;
@@ -171,8 +175,8 @@ class _CitasScreenState extends State<CitasScreen> {
                       const SizedBox(height: 16),
 
                       // 1. DESPLEGABLE DE CLIENTE Y MASCOTA
-                      DropdownButtonFormField(
-                        value: clienteSeleccionado,
+                      DropdownButtonFormField<int>(
+                        value: idMascotaSeleccionada,
                         dropdownColor: const Color(0xFF1E2429),
                         style: const TextStyle(color: Colors.white),
                         decoration: const InputDecoration(
@@ -183,24 +187,28 @@ class _CitasScreenState extends State<CitasScreen> {
                             color: Color(0xFF0DCF7E),
                           ),
                         ),
-                        items: _clientes.map((c) {
-                          return DropdownMenuItem(
-                            value: c,
+                        items: _clientesMascotas.map((c) {
+                          final idMascota = c['id_mascota'] as int?;
+                          final nombreCliente = c['nombre'] ?? 'Cliente';
+                          final nombreMascota =
+                              c['nombre_mascota'] ?? 'Sin Mascota';
+                          final especie = c['especie'] ?? '';
+
+                          return DropdownMenuItem<int>(
+                            value: idMascota,
                             child: Text(
-                              '${c['nombre']} - Mascota: ${c['mascota'] ?? 'Sin Mascota'}',
+                              '$nombreCliente - $nombreMascota ($especie)',
                               style: const TextStyle(fontSize: 13),
                               overflow: TextOverflow.ellipsis,
                             ),
                           );
                         }).toList(),
                         onChanged: (val) {
-                          setModalState(
-                            () => clienteSeleccionado =
-                                val as Map<String, dynamic>?,
-                          );
+                          setModalState(() => idMascotaSeleccionada = val);
                         },
-                        validator: (v) =>
-                            v == null ? 'Selecciona un cliente' : null,
+                        validator: (v) => v == null
+                            ? 'Selecciona un cliente y su mascota'
+                            : null,
                       ),
                       const SizedBox(height: 10),
 
@@ -219,12 +227,16 @@ class _CitasScreenState extends State<CitasScreen> {
                         ),
                         items: _servicios
                             .map(
-                              (s) => DropdownMenuItem(value: s, child: Text(s)),
+                              (s) => DropdownMenuItem<String>(
+                                value: s,
+                                child: Text(s),
+                              ),
                             )
                             .toList(),
                         onChanged: (val) {
-                          if (val != null)
+                          if (val != null) {
                             setModalState(() => servicioSeleccionado = val);
+                          }
                         },
                       ),
                       const SizedBox(height: 12),
@@ -315,7 +327,7 @@ class _CitasScreenState extends State<CitasScreen> {
                       ),
                       const SizedBox(height: 20),
 
-                      // 4. BOTÓN Y VALIDACIÓN DE HORA ANTERIOR
+                      // 4. BOTÓN Y VALIDACIÓN DE FECHA
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF0DCF7E),
@@ -357,7 +369,7 @@ class _CitasScreenState extends State<CitasScreen> {
                                 "${horaSeleccionada.hour.toString().padLeft(2, '0')}:${horaSeleccionada.minute.toString().padLeft(2, '0')}:00";
 
                             _guardarNuevaCita({
-                              'id_mascota': clienteSeleccionado?['id'] ?? 1,
+                              'id_mascota': idMascotaSeleccionada,
                               'servicio': servicioSeleccionado,
                               'fecha': fechaFormatted,
                               'hora': horaFormatted,
@@ -467,11 +479,16 @@ class _CitasScreenState extends State<CitasScreen> {
           final citas = snapshot.data ?? [];
           final query = _searchController.text.trim().toLowerCase();
 
+          // 1. Filtrado de lista general con estado seguro
           final citasFiltradas = citas.where((c) {
             final cliente = (c['cliente'] ?? '').toString().toLowerCase();
             final mascota = (c['mascota'] ?? '').toString().toLowerCase();
             final servicio = (c['servicio'] ?? '').toString().toLowerCase();
-            final estado = (c['estado'] ?? 'Pendiente').toString();
+
+            final rawEst = c['estado']?.toString().trim();
+            final estado = (rawEst == null || rawEst.isEmpty)
+                ? 'Pendiente'
+                : rawEst;
             final fecha = (c['fecha'] ?? '').toString();
 
             final coincideBusqueda =
@@ -492,11 +509,17 @@ class _CitasScreenState extends State<CitasScreen> {
             return coincideBusqueda && coincideEstado && coincideFecha;
           }).toList();
 
-          final pendientes = citas
-              .where((c) => (c['estado'] ?? 'Pendiente') == 'Pendiente')
-              .length;
+          // 2. Métricas del banner superior con evaluación segura
+          final pendientes = citas.where((c) {
+            final rawEst = c['estado']?.toString().trim();
+            final st = (rawEst == null || rawEst.isEmpty)
+                ? 'Pendiente'
+                : rawEst;
+            return st == 'Pendiente';
+          }).length;
+
           final completadas = citas
-              .where((c) => c['estado'] == 'Completada')
+              .where((c) => c['estado']?.toString().trim() == 'Completada')
               .length;
 
           return Column(
@@ -663,12 +686,19 @@ class _CitasScreenState extends State<CitasScreen> {
                           final servicio = cita['servicio'] ?? 'Consulta';
                           final fecha = cita['fecha'] ?? '';
                           final hora = cita['hora'] ?? '';
-                          final estado = cita['estado'] ?? 'Pendiente';
+
+                          // Asignación ultra protegida del estado
+                          final rawEstado = cita['estado']?.toString().trim();
+                          final estado =
+                              (rawEstado == null || rawEstado.isEmpty)
+                              ? 'Pendiente'
+                              : rawEstado;
 
                           Color badgeColor = Colors.orangeAccent;
                           if (estado == 'Completada') badgeColor = primaryColor;
-                          if (estado == 'Cancelada')
+                          if (estado == 'Cancelada') {
                             badgeColor = Colors.redAccent;
+                          }
 
                           return Container(
                             padding: const EdgeInsets.all(12),

@@ -36,7 +36,7 @@ app.get('/', (req, res) => {
 // ENDPOINTS DE CLIENTES (Estructura Completa)
 // ==========================================
 
-// OBTENER todos los clientes juntando sus mascotas reales
+// 1. OBTENER todos los clientes (1 sola fila por cliente con mascotas agrupadas para el Directorio)
 app.get('/api/clientes', (req, res) => {
   const sql = `
     SELECT 
@@ -48,18 +48,41 @@ app.get('/api/clientes', (req, res) => {
       c.direccion,
       c.puntos_fidelidad,
       COALESCE(
-        GROUP_CONCAT(CONCAT(m.nombre, ' (', COALESCE(m.especie, 'Mascota'), ')') SEPARATOR ', '),
+        GROUP_CONCAT(CONCAT(m.nombre_animal, ' (', COALESCE(m.especie, 'Mascota'), ')') SEPARATOR ', '),
         'Sin Mascota'
       ) AS mascota 
     FROM clientes c
     LEFT JOIN mascotas m ON c.id_cliente = m.id_cliente
     GROUP BY c.id_cliente
-    ORDER BY c.id_cliente DESC
+    ORDER BY c.nombre_completo ASC
   `;
   
   db.query(sql, (err, result) => {
     if (err) {
-      console.error('❌ Error al consultar clientes con mascotas:', err.message);
+      console.error('❌ Error al consultar clientes:', err.message);
+      return res.status(500).json({ error: err.message });
+    }
+    res.json(result);
+  });
+});
+
+// 2. OBTENER opciones desglosadas por mascota (Exclusivo para el desplegable de Citas)
+app.get('/api/clientes-mascotas-citas', (req, res) => {
+  const sql = `
+    SELECT 
+      c.id_cliente, 
+      c.nombre_completo AS nombre, 
+      m.id_mascota,
+      COALESCE(m.nombre_animal, 'Sin Mascota') AS nombre_mascota,
+      COALESCE(m.especie, 'Mascota') AS especie
+    FROM clientes c
+    INNER JOIN mascotas m ON c.id_cliente = m.id_cliente
+    ORDER BY c.nombre_completo ASC, m.id_mascota ASC
+  `;
+  
+  db.query(sql, (err, result) => {
+    if (err) {
+      console.error('❌ Error al consultar clientes para citas:', err.message);
       return res.status(500).json({ error: err.message });
     }
     res.json(result);
@@ -167,12 +190,12 @@ app.get('/api/citas', (req, res) => {
       ci.id_cita,
       ci.id_mascota,
       COALESCE(cl.nombre_completo, 'Cliente General') AS cliente,
-      COALESCE(m.nombre, CONCAT('Mascota #', ci.id_mascota)) AS mascota,
+      COALESCE(m.nombre_animal, CONCAT('Mascota #', ci.id_mascota)) AS mascota,
       ci.tipo_servicio AS servicio,
       DATE_FORMAT(ci.fecha_cita, '%Y-%m-%d') AS fecha,
       TIME_FORMAT(ci.fecha_cita, '%H:%i') AS hora,
       DATE_FORMAT(ci.fecha_cita, '%d/%m/%Y %h:%i %p') AS fecha_formateada,
-      ci.estado,
+      COALESCE(ci.estado, 'Pendiente') AS estado,
       COALESCE(ci.observaciones, 'Sin observaciones') AS notas
     FROM citas ci
     LEFT JOIN mascotas m ON ci.id_mascota = m.id_mascota
