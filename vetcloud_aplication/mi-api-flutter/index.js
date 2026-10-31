@@ -33,42 +33,64 @@ app.get('/', (req, res) => {
 });
 
 // ==========================================
-// ENDPOINTS DE CLIENTES (Estructura BD Real)
+// ENDPOINTS DE CLIENTES (Estructura Completa)
 // ==========================================
 
-// OBTENER todos los clientes (GET)
-// Mapea id_cliente -> id y nombre_completo -> nombre
+// OBTENER todos los clientes juntando sus mascotas reales
 app.get('/api/clientes', (req, res) => {
   const sql = `
     SELECT 
-      id_cliente AS id, 
-      nombre_completo AS nombre, 
-      telefono, 
-      'Mascota' AS mascota 
-    FROM clientes 
-    ORDER BY id_cliente DESC
+      c.id_cliente AS id, 
+      c.cedula,
+      c.nombre_completo AS nombre, 
+      c.telefono, 
+      c.email,
+      c.direccion,
+      c.puntos_fidelidad,
+      COALESCE(
+        GROUP_CONCAT(CONCAT(m.nombre, ' (', COALESCE(m.especie, 'Mascota'), ')') SEPARATOR ', '),
+        'Sin Mascota'
+      ) AS mascota 
+    FROM clientes c
+    LEFT JOIN mascotas m ON c.id_cliente = m.id_cliente
+    GROUP BY c.id_cliente
+    ORDER BY c.id_cliente DESC
   `;
   
   db.query(sql, (err, result) => {
     if (err) {
-      console.error('❌ Error al consultar clientes:', err.message);
+      console.error('❌ Error al consultar clientes con mascotas:', err.message);
       return res.status(500).json({ error: err.message });
     }
     res.json(result);
   });
 });
 
-// CREAR un cliente (POST)
-// Inserta en nombre_completo y telefono
+// CREAR un cliente (POST) - Incluye cédula, email y dirección
 app.post('/api/clientes', (req, res) => {
-  const { nombre, telefono } = req.body;
-  const sql = 'INSERT INTO clientes (nombre_completo, telefono) VALUES (?, ?)';
+  const { cedula, nombre, telefono, email, direccion } = req.body;
 
-  db.query(sql, [nombre, telefono], (err, result) => {
+  // Validación básica de campos requeridos
+  if (!cedula || !nombre || !email || !direccion) {
+    return res.status(400).json({ 
+      error: 'Cédula, nombre, email y dirección son obligatorios' 
+    });
+  }
+
+  const sql = `
+    INSERT INTO clientes (cedula, nombre_completo, telefono, email, direccion) 
+    VALUES (?, ?, ?, ?, ?)
+  `;
+
+  db.query(sql, [cedula, nombre, telefono || 'N/A', email, direccion], (err, result) => {
     if (err) {
       console.error('❌ Error al crear cliente:', err.message);
       return res.status(500).json({ error: err.message });
     }
+    
+    console.log(`\n👤 NUEVO CLIENTE REGISTRADO (#${result.insertId})`);
+    console.log(`> Cédula: ${cedula} | Nombre: ${nombre}`);
+
     res.status(201).json({ 
       mensaje: 'Cliente registrado con éxito',
       id: result.insertId 
@@ -134,24 +156,28 @@ app.post('/api/login', (req, res) => {
 });
 
 // ==========================================
-// ENDPOINTS DE CITAS MÉDICAS (Estructura BD Real)
+// ENDPOINTS DE CITAS MÉDICAS (Ajustados para Calendario y Desplegable)
 // ==========================================
 
-// OBTENER todas las citas (GET)
-// Formatea fecha_cita, tipo_servicio u observaciones a las propiedades de Flutter
+// OBTENER todas las citas (GET) - Con JOIN para traer datos de Cliente y Mascota
 app.get('/api/citas', (req, res) => {
   const sql = `
     SELECT 
-      id_cita AS id,
-      'Cliente General' AS cliente,
-      CONCAT('Mascota #', id_mascota) AS mascota,
-      tipo_servicio AS servicio,
-      DATE_FORMAT(fecha_cita, '%d/%m/%Y') AS fecha,
-      TIME_FORMAT(fecha_cita, '%h:%i %p') AS hora,
-      estado,
-      COALESCE(observaciones, 'Sin observaciones') AS notas
-    FROM citas 
-    ORDER BY id_cita DESC
+      ci.id_cita AS id,
+      ci.id_cita,
+      ci.id_mascota,
+      COALESCE(cl.nombre_completo, 'Cliente General') AS cliente,
+      COALESCE(m.nombre, CONCAT('Mascota #', ci.id_mascota)) AS mascota,
+      ci.tipo_servicio AS servicio,
+      DATE_FORMAT(ci.fecha_cita, '%Y-%m-%d') AS fecha,
+      TIME_FORMAT(ci.fecha_cita, '%H:%i') AS hora,
+      DATE_FORMAT(ci.fecha_cita, '%d/%m/%Y %h:%i %p') AS fecha_formateada,
+      ci.estado,
+      COALESCE(ci.observaciones, 'Sin observaciones') AS notas
+    FROM citas ci
+    LEFT JOIN mascotas m ON ci.id_mascota = m.id_mascota
+    LEFT JOIN clientes cl ON m.id_cliente = cl.id_cliente
+    ORDER BY ci.fecha_cita ASC
   `;
   
   db.query(sql, (err, results) => {
@@ -164,27 +190,26 @@ app.get('/api/citas', (req, res) => {
 });
 
 // CREAR una nueva cita (POST)
-// Adapta la entrada para guardar en fecha_cita, tipo_servicio y observaciones
 app.post('/api/citas', (req, res) => {
-  const { servicio, fecha, hora, notas } = req.body;
+  const { id_mascota, servicio, fecha, hora, notas } = req.body;
   const horaRegistro = new Date().toLocaleTimeString();
 
   // Se formatea fecha y hora al standard DATETIME 'YYYY-MM-DD HH:MM:SS'
   const fechaCita = `${fecha} ${hora}`;
-  const idMascotaPorDefecto = 1; 
+  const mascotaId = id_mascota || 1; 
 
   const sql = `
     INSERT INTO citas (id_mascota, fecha_cita, tipo_servicio, estado, observaciones)
     VALUES (?, ?, ?, 'Pendiente', ?)
   `;
   
-  db.query(sql, [idMascotaPorDefecto, fechaCita, servicio, notas || 'Sin observaciones'], (err, result) => {
+  db.query(sql, [mascotaId, fechaCita, servicio, notas || 'Sin observaciones'], (err, result) => {
     if (err) {
       console.error('❌ Error al agendar cita:', err.message);
       return res.status(500).json({ error: err.message });
     }
-    console.log(`\n📅 [${horaRegistro}] NUEVA CITA REGISTRADA`);
-    console.log(`> Servicio: ${servicio} | Fecha/Hora: ${fechaCita}`);
+    console.log(`\n📅 [${horaRegistro}] NUEVA CITA REGISTRADA (#${result.insertId})`);
+    console.log(`> Mascota ID: ${mascotaId} | Servicio: ${servicio} | Fecha/Hora: ${fechaCita}`);
     
     res.status(201).json({ mensaje: 'Cita agendada con éxito', id: result.insertId });
   });

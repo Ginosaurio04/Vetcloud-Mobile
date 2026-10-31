@@ -16,7 +16,6 @@ class _ClientesScreenState extends State<ClientesScreen> {
   final _searchController = TextEditingController();
   late Future<List<dynamic>> _futureClientes;
 
-  // URL para entorno Web/Chrome. Para Emulador Android usa: 'http://10.0.2.2:3000/api/clientes'
   final String _baseUrl = 'http://localhost:3000/api/clientes';
 
   @override
@@ -52,7 +51,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Cliente registrado exitosamente en MySQL'),
+            content: Text('Cliente registrado exitosamente'),
             backgroundColor: Color(0xFF0DCF7E),
             behavior: SnackBarBehavior.floating,
           ),
@@ -60,9 +59,10 @@ class _ClientesScreenState extends State<ClientesScreen> {
       }
     } else {
       if (mounted) {
+        final err = jsonDecode(res.body);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Error al guardar el cliente'),
+          SnackBar(
+            content: Text(err['error'] ?? 'Error al guardar el cliente'),
             backgroundColor: Colors.redAccent,
             behavior: SnackBarBehavior.floating,
           ),
@@ -79,9 +79,17 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
   void _abrirModalAgregarCliente(BuildContext context) {
     final formKey = GlobalKey<FormState>();
+    final cedulaCtrl = TextEditingController();
     final nombreCtrl = TextEditingController();
     final telefonoCtrl = TextEditingController();
-    final mascotaCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final direccionCtrl = TextEditingController();
+
+    // Campos detallados de la Mascota
+    final nombreMascotaCtrl = TextEditingController();
+    final especieMascotaCtrl = TextEditingController(text: 'Perro');
+    final razaMascotaCtrl = TextEditingController();
+    final edadMascotaCtrl = TextEditingController();
 
     showModalBottomSheet(
       context: context,
@@ -110,7 +118,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                       Icon(Icons.person_add_alt_1, color: Color(0xFF0DCF7E)),
                       SizedBox(width: 8),
                       Text(
-                        'Registrar Nuevo Cliente',
+                        'Registrar Cliente y Mascota',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 18,
@@ -120,46 +128,149 @@ class _ClientesScreenState extends State<ClientesScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
+
+                  // DATOS DEL CLIENTE
+                  const Text(
+                    'DATOS DEL PROPIETARIO',
+                    style: TextStyle(
+                      color: Color(0xFF0DCF7E),
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  TextFormField(
+                    controller: cedulaCtrl,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: 'Cédula / ID *',
+                      labelStyle: TextStyle(color: Colors.white70),
+                      prefixIcon: Icon(Icons.badge, color: Color(0xFF0DCF7E)),
+                    ),
+                    validator: (v) => v == null || v.trim().isEmpty
+                        ? 'La Cédula es obligatoria'
+                        : null,
+                  ),
+                  const SizedBox(height: 10),
+
                   TextFormField(
                     controller: nombreCtrl,
                     style: const TextStyle(color: Colors.white),
                     decoration: const InputDecoration(
-                      labelText: 'Nombre Completo',
+                      labelText: 'Nombre Completo *',
                       labelStyle: TextStyle(color: Colors.white70),
                       prefixIcon: Icon(Icons.person, color: Color(0xFF0DCF7E)),
                     ),
                     validator: (v) => v == null || v.trim().isEmpty
-                        ? 'Ingresa el nombre'
+                        ? 'El Nombre es obligatorio'
                         : null,
                   ),
                   const SizedBox(height: 10),
+
                   TextFormField(
                     controller: telefonoCtrl,
                     keyboardType: TextInputType.phone,
                     style: const TextStyle(color: Colors.white),
                     decoration: const InputDecoration(
-                      labelText: 'Teléfono de Contacto',
+                      labelText: 'Teléfono',
                       labelStyle: TextStyle(color: Colors.white70),
                       prefixIcon: Icon(Icons.phone, color: Color(0xFF0DCF7E)),
                     ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  TextFormField(
+                    controller: emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: 'Correo Electrónico *',
+                      labelStyle: TextStyle(color: Colors.white70),
+                      prefixIcon: Icon(Icons.email, color: Color(0xFF0DCF7E)),
+                    ),
                     validator: (v) => v == null || v.trim().isEmpty
-                        ? 'Ingresa el teléfono'
+                        ? 'El Email es obligatorio'
                         : null,
                   ),
                   const SizedBox(height: 10),
+
                   TextFormField(
-                    controller: mascotaCtrl,
+                    controller: direccionCtrl,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: 'Dirección de Habitación *',
+                      labelStyle: TextStyle(color: Colors.white70),
+                      prefixIcon: Icon(Icons.home, color: Color(0xFF0DCF7E)),
+                    ),
+                    validator: (v) => v == null || v.trim().isEmpty
+                        ? 'La Dirección es obligatoria'
+                        : null,
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // DATOS DETALLADOS DE LA MASCOTA
+                  const Text(
+                    'INFORMACIÓN DE LA MASCOTA',
+                    style: TextStyle(
+                      color: Color(0xFF0DCF7E),
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  TextFormField(
+                    controller: nombreMascotaCtrl,
                     style: const TextStyle(color: Colors.white),
                     decoration: const InputDecoration(
                       labelText: 'Nombre de la Mascota',
                       labelStyle: TextStyle(color: Colors.white70),
                       prefixIcon: Icon(Icons.pets, color: Color(0xFF0DCF7E)),
                     ),
-                    validator: (v) => v == null || v.trim().isEmpty
-                        ? 'Ingresa el nombre de la mascota'
-                        : null,
                   ),
+                  const SizedBox(height: 10),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: especieMascotaCtrl,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: const InputDecoration(
+                            labelText: 'Especie (Ej. Perro/Gato)',
+                            labelStyle: TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextFormField(
+                          controller: razaMascotaCtrl,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: const InputDecoration(
+                            labelText: 'Raza',
+                            labelStyle: TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  TextFormField(
+                    controller: edadMascotaCtrl,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: 'Edad de la Mascota',
+                      labelStyle: TextStyle(color: Colors.white70),
+                      prefixIcon: Icon(Icons.cake, color: Color(0xFF0DCF7E)),
+                    ),
+                  ),
+
                   const SizedBox(height: 20),
+
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF0DCF7E),
@@ -173,14 +284,19 @@ class _ClientesScreenState extends State<ClientesScreen> {
                       if (formKey.currentState!.validate()) {
                         Navigator.pop(ctx);
                         _guardarNuevoCliente({
+                          'cedula': cedulaCtrl.text.trim(),
                           'nombre': nombreCtrl.text.trim(),
                           'telefono': telefonoCtrl.text.trim(),
-                          'mascota': mascotaCtrl.text.trim(),
+                          'email': emailCtrl.text.trim(),
+                          'direccion': direccionCtrl.text.trim(),
+                          'mascota': nombreMascotaCtrl.text.trim().isEmpty
+                              ? 'Sin Registro'
+                              : '${nombreMascotaCtrl.text.trim()} (${especieMascotaCtrl.text.trim()} - ${razaMascotaCtrl.text.trim()})',
                         });
                       }
                     },
                     child: const Text(
-                      'Guardar Cliente',
+                      'Guardar Registro Completo',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 15,
@@ -193,6 +309,95 @@ class _ClientesScreenState extends State<ClientesScreen> {
           ),
         );
       },
+    );
+  }
+
+  void _mostrarDetalleCliente(
+    BuildContext context,
+    Map<String, dynamic> cliente,
+  ) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E2429),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.contact_page, color: Color(0xFF0DCF7E)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                cliente['nombre'] ?? 'Cliente',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _itemDetalle(Icons.badge, 'Cédula:', cliente['cedula'] ?? 'N/A'),
+            _itemDetalle(
+              Icons.phone,
+              'Teléfono:',
+              cliente['telefono'] ?? 'N/A',
+            ),
+            _itemDetalle(Icons.email, 'Email:', cliente['email'] ?? 'N/A'),
+            _itemDetalle(
+              Icons.home,
+              'Dirección:',
+              cliente['direccion'] ?? 'N/A',
+            ),
+            const Divider(color: Colors.white24, height: 20),
+            _itemDetalle(
+              Icons.pets,
+              'Mascota:',
+              cliente['mascota'] ?? 'Sin Mascota',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              'Cerrar',
+              style: TextStyle(color: Color(0xFF0DCF7E)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _itemDetalle(IconData icon, String label, String val) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: const Color(0xFF0DCF7E), size: 16),
+          const SizedBox(width: 8),
+          Text(
+            '$label ',
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              val,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -263,15 +468,16 @@ class _ClientesScreenState extends State<ClientesScreen> {
             final nombre = (c['nombre'] ?? '').toString().toLowerCase();
             final telefono = (c['telefono'] ?? '').toString().toLowerCase();
             final mascota = (c['mascota'] ?? '').toString().toLowerCase();
+            final cedula = (c['cedula'] ?? '').toString().toLowerCase();
             return query.isEmpty ||
                 nombre.contains(query) ||
                 telefono.contains(query) ||
+                cedula.contains(query) ||
                 mascota.contains(query);
           }).toList();
 
           return Column(
             children: [
-              // Banner métrico
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -297,7 +503,6 @@ class _ClientesScreenState extends State<ClientesScreen> {
                 ),
               ),
 
-              // Buscador de Clientes
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                 child: TextField(
@@ -305,7 +510,8 @@ class _ClientesScreenState extends State<ClientesScreen> {
                   onChanged: (_) => setState(() {}),
                   style: const TextStyle(color: Colors.white),
                   decoration: InputDecoration(
-                    hintText: 'Buscar por cliente, teléfono o mascota...',
+                    hintText:
+                        'Buscar por cliente, cédula, teléfono o mascota...',
                     hintStyle: const TextStyle(
                       color: Colors.white38,
                       fontSize: 13,
@@ -337,12 +543,11 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
               const SizedBox(height: 8),
 
-              // Lista de Clientes desde MySQL
               Expanded(
                 child: clientesFiltrados.isEmpty
                     ? const Center(
                         child: Text(
-                          'No hay clientes registrados en la Base de Datos.',
+                          'No hay clientes registrados.',
                           style: TextStyle(color: Colors.white54),
                         ),
                       )
@@ -357,101 +562,108 @@ class _ClientesScreenState extends State<ClientesScreen> {
                               cliente['telefono'] ?? 'Sin Teléfono';
                           final mascota = cliente['mascota'] ?? 'Sin Mascota';
 
-                          return Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: cardBg,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.white10),
-                            ),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 22,
-                                  backgroundColor: primaryColor.withValues(
-                                    alpha: 0.15,
-                                  ),
-                                  child: Text(
-                                    nombre.isNotEmpty
-                                        ? nombre[0].toUpperCase()
-                                        : 'C',
-                                    style: const TextStyle(
-                                      color: primaryColor,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 18,
+                          return InkWell(
+                            onTap: () =>
+                                _mostrarDetalleCliente(context, cliente),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: cardBg,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.white10),
+                              ),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 22,
+                                    backgroundColor: primaryColor.withValues(
+                                      alpha: 0.15,
                                     ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        nombre,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Row(
-                                        children: [
-                                          const Icon(
-                                            Icons.phone_android,
-                                            color: Colors.white54,
-                                            size: 12,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            telefono,
-                                            style: const TextStyle(
-                                              color: Colors.white60,
-                                              fontSize: 11,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.05),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: primaryColor.withValues(
-                                        alpha: 0.3,
-                                      ),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(
-                                        Icons.pets,
+                                    child: Text(
+                                      nombre.isNotEmpty
+                                          ? nombre[0].toUpperCase()
+                                          : 'C',
+                                      style: const TextStyle(
                                         color: primaryColor,
-                                        size: 14,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 18,
                                       ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        mascota,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 12,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          nombre,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.phone_android,
+                                              color: Colors.white54,
+                                              size: 12,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              telefono,
+                                              style: const TextStyle(
+                                                color: Colors.white60,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.05,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: primaryColor.withValues(
+                                          alpha: 0.3,
                                         ),
                                       ),
-                                    ],
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.pets,
+                                          color: primaryColor,
+                                          size: 14,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          mascota,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           );
                         },

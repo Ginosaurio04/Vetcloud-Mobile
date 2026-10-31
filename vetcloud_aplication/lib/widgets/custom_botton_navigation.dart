@@ -32,9 +32,12 @@ class CustomBottomNavigation extends StatelessWidget {
 
     return BottomNavigationBar(
       items: items,
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFF1E2429),
+      type: BottomNavigationBarType.fixed,
       currentIndex: validatedIndex,
       selectedItemColor: const Color.fromARGB(255, 13, 207, 126),
+      unselectedItemColor: Colors.white54,
+      showUnselectedLabels: true,
       onTap: (index) {
         switch (index) {
           case 0:

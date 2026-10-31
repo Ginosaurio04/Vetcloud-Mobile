@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:table_calendar/table_calendar.dart';
 import '../widgets/custom_botton_navigation.dart';
 
 class CitasScreen extends StatefulWidget {
@@ -15,10 +16,18 @@ class CitasScreen extends StatefulWidget {
 class _CitasScreenState extends State<CitasScreen> {
   final _searchController = TextEditingController();
   late Future<List<dynamic>> _futureCitas;
+  List<dynamic> _clientes = [];
   String _filtroEstado = 'Todos';
 
-  // URL para Chrome/Web. En Emulador Android usa: 'http://10.0.2.2:3000/api/citas'
+  // URLs de los endpoints de Node.js
   final String _baseUrl = 'http://localhost:3000/api/citas';
+  final String _baseUrlClientes = 'http://localhost:3000/api/clientes';
+
+  // Estado del Calendario
+  CalendarFormat _calendarFormat = CalendarFormat.month;
+  DateTime _focusedDay = DateTime.now();
+  DateTime? _selectedDay;
+  bool _mostrarCalendario = false;
 
   final List<String> _servicios = [
     'Consulta General',
@@ -32,13 +41,26 @@ class _CitasScreenState extends State<CitasScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedDay = _focusedDay;
     _cargarCitas();
+    _cargarClientes();
   }
 
   void _cargarCitas() {
     setState(() {
       _futureCitas = _obtenerCitas();
     });
+  }
+
+  Future<void> _cargarClientes() async {
+    try {
+      final res = await http.get(Uri.parse(_baseUrlClientes));
+      if (res.statusCode == 200) {
+        setState(() {
+          _clientes = jsonDecode(res.body) as List<dynamic>;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<List<dynamic>> _obtenerCitas() async {
@@ -101,13 +123,12 @@ class _CitasScreenState extends State<CitasScreen> {
 
   void _abrirModalAgendarCita(BuildContext context) {
     final formKey = GlobalKey<FormState>();
-    final clienteCtrl = TextEditingController();
-    final mascotaCtrl = TextEditingController();
+    Map<String, dynamic>? clienteSeleccionado;
     final notasCtrl = TextEditingController();
 
     String servicioSeleccionado = _servicios.first;
     DateTime fechaSeleccionada = DateTime.now();
-    TimeOfDay horaSeleccionada = const TimeOfDay(hour: 9, minute: 0);
+    TimeOfDay horaSeleccionada = TimeOfDay.now();
 
     showModalBottomSheet(
       context: context,
@@ -149,40 +170,43 @@ class _CitasScreenState extends State<CitasScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      TextFormField(
-                        controller: clienteCtrl,
+                      // 1. DESPLEGABLE DE CLIENTE Y MASCOTA
+                      DropdownButtonFormField(
+                        value: clienteSeleccionado,
+                        dropdownColor: const Color(0xFF1E2429),
                         style: const TextStyle(color: Colors.white),
                         decoration: const InputDecoration(
-                          labelText: 'Nombre del Cliente',
+                          labelText: 'Seleccionar Cliente y Mascota *',
                           labelStyle: TextStyle(color: Colors.white70),
                           prefixIcon: Icon(
                             Icons.person,
                             color: Color(0xFF0DCF7E),
                           ),
                         ),
+                        items: _clientes.map((c) {
+                          return DropdownMenuItem(
+                            value: c,
+                            child: Text(
+                              '${c['nombre']} - Mascota: ${c['mascota'] ?? 'Sin Mascota'}',
+                              style: const TextStyle(fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          setModalState(
+                            () => clienteSeleccionado =
+                                val as Map<String, dynamic>?,
+                          );
+                        },
                         validator: (v) =>
-                            v == null || v.trim().isEmpty ? 'Requerido' : null,
+                            v == null ? 'Selecciona un cliente' : null,
                       ),
                       const SizedBox(height: 10),
 
-                      TextFormField(
-                        controller: mascotaCtrl,
-                        style: const TextStyle(color: Colors.white),
-                        decoration: const InputDecoration(
-                          labelText: 'Nombre de la Mascota',
-                          labelStyle: TextStyle(color: Colors.white70),
-                          prefixIcon: Icon(
-                            Icons.pets,
-                            color: Color(0xFF0DCF7E),
-                          ),
-                        ),
-                        validator: (v) =>
-                            v == null || v.trim().isEmpty ? 'Requerido' : null,
-                      ),
-                      const SizedBox(height: 10),
-
+                      // 2. SELECCIÓN DE SERVICIO VETERINARIO
                       DropdownButtonFormField<String>(
-                        initialValue: servicioSeleccionado,
+                        value: servicioSeleccionado,
                         dropdownColor: const Color(0xFF1E2429),
                         style: const TextStyle(color: Colors.white),
                         decoration: const InputDecoration(
@@ -205,7 +229,7 @@ class _CitasScreenState extends State<CitasScreen> {
                       ),
                       const SizedBox(height: 12),
 
-                      // Selectores de Fecha y Hora
+                      // 3. SELECTORES DE FECHA Y HORA
                       Row(
                         children: [
                           Expanded(
@@ -222,7 +246,7 @@ class _CitasScreenState extends State<CitasScreen> {
                                 size: 18,
                               ),
                               label: Text(
-                                '${fechaSeleccionada.day}/${fechaSeleccionada.month}/${fechaSeleccionada.year}',
+                                '${fechaSeleccionada.day.toString().padLeft(2, '0')}/${fechaSeleccionada.month.toString().padLeft(2, '0')}/${fechaSeleccionada.year}',
                                 style: const TextStyle(color: Colors.white),
                               ),
                               onPressed: () async {
@@ -291,6 +315,7 @@ class _CitasScreenState extends State<CitasScreen> {
                       ),
                       const SizedBox(height: 20),
 
+                      // 4. BOTÓN Y VALIDACIÓN DE HORA ANTERIOR
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF0DCF7E),
@@ -302,14 +327,40 @@ class _CitasScreenState extends State<CitasScreen> {
                         ),
                         onPressed: () {
                           if (formKey.currentState!.validate()) {
+                            final ahora = DateTime.now();
+                            final citaDateTime = DateTime(
+                              fechaSeleccionada.year,
+                              fechaSeleccionada.month,
+                              fechaSeleccionada.day,
+                              horaSeleccionada.hour,
+                              horaSeleccionada.minute,
+                            );
+
+                            if (citaDateTime.isBefore(ahora)) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'No se puede agendar una cita en un horario que ya pasó',
+                                  ),
+                                  backgroundColor: Colors.redAccent,
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                              return;
+                            }
+
                             Navigator.pop(ctx);
+
+                            final fechaFormatted =
+                                "${fechaSeleccionada.year}-${fechaSeleccionada.month.toString().padLeft(2, '0')}-${fechaSeleccionada.day.toString().padLeft(2, '0')}";
+                            final horaFormatted =
+                                "${horaSeleccionada.hour.toString().padLeft(2, '0')}:${horaSeleccionada.minute.toString().padLeft(2, '0')}:00";
+
                             _guardarNuevaCita({
-                              'cliente': clienteCtrl.text.trim(),
-                              'mascota': mascotaCtrl.text.trim(),
+                              'id_mascota': clienteSeleccionado?['id'] ?? 1,
                               'servicio': servicioSeleccionado,
-                              'fecha':
-                                  '${fechaSeleccionada.day}/${fechaSeleccionada.month}/${fechaSeleccionada.year}',
-                              'hora': horaSeleccionada.format(context),
+                              'fecha': fechaFormatted,
+                              'hora': horaFormatted,
                               'notas': notasCtrl.text.trim().isEmpty
                                   ? 'Sin observaciones'
                                   : notasCtrl.text.trim(),
@@ -354,6 +405,20 @@ class _CitasScreenState extends State<CitasScreen> {
             fontSize: 18,
           ),
         ),
+        actions: [
+          IconButton(
+            icon: Icon(
+              _mostrarCalendario ? Icons.list_alt : Icons.calendar_month,
+              color: primaryColor,
+            ),
+            tooltip: _mostrarCalendario ? 'Ver Lista' : 'Ver Calendario',
+            onPressed: () {
+              setState(() {
+                _mostrarCalendario = !_mostrarCalendario;
+              });
+            },
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: primaryColor,
@@ -407,6 +472,7 @@ class _CitasScreenState extends State<CitasScreen> {
             final mascota = (c['mascota'] ?? '').toString().toLowerCase();
             final servicio = (c['servicio'] ?? '').toString().toLowerCase();
             final estado = (c['estado'] ?? 'Pendiente').toString();
+            final fecha = (c['fecha'] ?? '').toString();
 
             final coincideBusqueda =
                 query.isEmpty ||
@@ -416,7 +482,14 @@ class _CitasScreenState extends State<CitasScreen> {
             final coincideEstado =
                 _filtroEstado == 'Todos' || estado == _filtroEstado;
 
-            return coincideBusqueda && coincideEstado;
+            bool coincideFecha = true;
+            if (_mostrarCalendario && _selectedDay != null) {
+              final fechaSelFormatted =
+                  "${_selectedDay!.year}-${_selectedDay!.month.toString().padLeft(2, '0')}-${_selectedDay!.day.toString().padLeft(2, '0')}";
+              coincideFecha = fecha == fechaSelFormatted;
+            }
+
+            return coincideBusqueda && coincideEstado && coincideFecha;
           }).toList();
 
           final pendientes = citas
@@ -458,6 +531,59 @@ class _CitasScreenState extends State<CitasScreen> {
                   ],
                 ),
               ),
+
+              // Vista de Calendario
+              if (_mostrarCalendario) ...[
+                TableCalendar(
+                  firstDay: DateTime.utc(2023, 1, 1),
+                  lastDay: DateTime.utc(2030, 12, 31),
+                  focusedDay: _focusedDay,
+                  calendarFormat: _calendarFormat,
+                  selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+                  onDaySelected: (selectedDay, focusedDay) {
+                    setState(() {
+                      _selectedDay = selectedDay;
+                      _focusedDay = focusedDay;
+                    });
+                  },
+                  onFormatChanged: (format) {
+                    setState(() => _calendarFormat = format);
+                  },
+                  calendarStyle: const CalendarStyle(
+                    todayDecoration: BoxDecoration(
+                      color: Colors.white24,
+                      shape: BoxShape.circle,
+                    ),
+                    selectedDecoration: BoxDecoration(
+                      color: primaryColor,
+                      shape: BoxShape.circle,
+                    ),
+                    selectedTextStyle: TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    defaultTextStyle: TextStyle(color: Colors.white),
+                    weekendTextStyle: TextStyle(color: Colors.white54),
+                  ),
+                  headerStyle: const HeaderStyle(
+                    formatButtonTextStyle: TextStyle(color: Colors.white),
+                    titleCentered: true,
+                    titleTextStyle: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    leftChevronIcon: Icon(
+                      Icons.chevron_left,
+                      color: Colors.white,
+                    ),
+                    rightChevronIcon: Icon(
+                      Icons.chevron_right,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                const Divider(color: Colors.white12),
+              ],
 
               // Buscador
               Padding(
@@ -515,12 +641,12 @@ class _CitasScreenState extends State<CitasScreen> {
 
               const SizedBox(height: 8),
 
-              // Lista de Citas de MySQL
+              // Lista de Citas
               Expanded(
                 child: citasFiltradas.isEmpty
                     ? const Center(
                         child: Text(
-                          'No hay citas registradas.',
+                          'No hay citas registradas para este filtro.',
                           style: TextStyle(color: Colors.white54),
                         ),
                       )
@@ -638,7 +764,6 @@ class _CitasScreenState extends State<CitasScreen> {
                                     ),
                                     const Spacer(),
 
-                                    // Botones de cambio de estado
                                     if (estado == 'Pendiente') ...[
                                       IconButton(
                                         icon: const Icon(
