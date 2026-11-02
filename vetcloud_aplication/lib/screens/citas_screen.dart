@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:table_calendar/table_calendar.dart';
 import '../widgets/custom_botton_navigation.dart';
+import '../services/notification_service.dart';
 
 class CitasScreen extends StatefulWidget {
   final String title;
@@ -19,12 +20,10 @@ class _CitasScreenState extends State<CitasScreen> {
   List<dynamic> _clientesMascotas = [];
   String _filtroEstado = 'Todos';
 
-  // URLs de los endpoints de Node.js
   final String _baseUrl = 'http://localhost:3000/api/citas';
   final String _baseUrlClientesMascotas =
       'http://localhost:3000/api/clientes-mascotas-citas';
 
-  // Estado del Calendario
   CalendarFormat _calendarFormat = CalendarFormat.month;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
@@ -84,7 +83,20 @@ class _CitasScreenState extends State<CitasScreen> {
     );
 
     if (res.statusCode == 201) {
+      final body = jsonDecode(res.body);
+      final int citaId =
+          body['id'] ?? DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
       _cargarCitas();
+
+      // 🔔 NOTIFICACIÓN: Confirmación al agendar
+      await NotificationService.mostrarNotificacionInmediata(
+        id: citaId,
+        titulo: '📅 Cita Agendada Exitosamente',
+        cuerpo:
+            'Se ha registrado la cita para el servicio de ${citaData['servicio']}.',
+      );
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -116,6 +128,22 @@ class _CitasScreenState extends State<CitasScreen> {
 
     if (res.statusCode == 200) {
       _cargarCitas();
+
+      // 🔔 NOTIFICACIONES DE CAMBIO DE ESTADO
+      if (nuevoEstado == 'Completada') {
+        await NotificationService.mostrarNotificacionInmediata(
+          id: id,
+          titulo: '✅ Cita Finalizada',
+          cuerpo: 'La cita #$id fue marcada como Completada.',
+        );
+      } else if (nuevoEstado == 'Cancelada') {
+        await NotificationService.mostrarNotificacionInmediata(
+          id: id,
+          titulo: '❌ Cita Cancelada',
+          cuerpo: 'La cita #$id ha sido cancelada.',
+        );
+        await NotificationService.cancelarNotificacion(id);
+      }
     }
   }
 
@@ -174,7 +202,6 @@ class _CitasScreenState extends State<CitasScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // 1. DESPLEGABLE DE CLIENTE Y MASCOTA
                       DropdownButtonFormField<int>(
                         value: idMascotaSeleccionada,
                         dropdownColor: const Color(0xFF1E2429),
@@ -212,7 +239,6 @@ class _CitasScreenState extends State<CitasScreen> {
                       ),
                       const SizedBox(height: 10),
 
-                      // 2. SELECCIÓN DE SERVICIO VETERINARIO
                       DropdownButtonFormField<String>(
                         value: servicioSeleccionado,
                         dropdownColor: const Color(0xFF1E2429),
@@ -241,7 +267,6 @@ class _CitasScreenState extends State<CitasScreen> {
                       ),
                       const SizedBox(height: 12),
 
-                      // 3. SELECTORES DE FECHA Y HORA
                       Row(
                         children: [
                           Expanded(
@@ -327,7 +352,6 @@ class _CitasScreenState extends State<CitasScreen> {
                       ),
                       const SizedBox(height: 20),
 
-                      // 4. BOTÓN Y VALIDACIÓN DE FECHA
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF0DCF7E),
@@ -479,7 +503,6 @@ class _CitasScreenState extends State<CitasScreen> {
           final citas = snapshot.data ?? [];
           final query = _searchController.text.trim().toLowerCase();
 
-          // 1. Filtrado de lista general con estado seguro
           final citasFiltradas = citas.where((c) {
             final cliente = (c['cliente'] ?? '').toString().toLowerCase();
             final mascota = (c['mascota'] ?? '').toString().toLowerCase();
@@ -509,7 +532,6 @@ class _CitasScreenState extends State<CitasScreen> {
             return coincideBusqueda && coincideEstado && coincideFecha;
           }).toList();
 
-          // 2. Métricas del banner superior con evaluación segura
           final pendientes = citas.where((c) {
             final rawEst = c['estado']?.toString().trim();
             final st = (rawEst == null || rawEst.isEmpty)
@@ -524,7 +546,6 @@ class _CitasScreenState extends State<CitasScreen> {
 
           return Column(
             children: [
-              // Banner métrico
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -555,7 +576,6 @@ class _CitasScreenState extends State<CitasScreen> {
                 ),
               ),
 
-              // Vista de Calendario
               if (_mostrarCalendario) ...[
                 TableCalendar(
                   firstDay: DateTime.utc(2023, 1, 1),
@@ -608,7 +628,6 @@ class _CitasScreenState extends State<CitasScreen> {
                 const Divider(color: Colors.white12),
               ],
 
-              // Buscador
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                 child: TextField(
@@ -633,7 +652,6 @@ class _CitasScreenState extends State<CitasScreen> {
                 ),
               ),
 
-              // Filtros por Estado
               SizedBox(
                 height: 38,
                 child: ListView(
@@ -664,7 +682,6 @@ class _CitasScreenState extends State<CitasScreen> {
 
               const SizedBox(height: 8),
 
-              // Lista de Citas
               Expanded(
                 child: citasFiltradas.isEmpty
                     ? const Center(
@@ -687,7 +704,6 @@ class _CitasScreenState extends State<CitasScreen> {
                           final fecha = cita['fecha'] ?? '';
                           final hora = cita['hora'] ?? '';
 
-                          // Asignación ultra protegida del estado
                           final rawEstado = cita['estado']?.toString().trim();
                           final estado =
                               (rawEstado == null || rawEstado.isEmpty)
