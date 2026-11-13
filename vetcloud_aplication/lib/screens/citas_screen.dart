@@ -90,7 +90,7 @@ class _CitasScreenState extends State<CitasScreen> {
       _cargarCitas();
 
       // 🔔 NOTIFICACIÓN: Confirmación al agendar
-      await NotificationService.mostrarNotificacionInmediata(
+      await _notificar(
         id: citaId,
         titulo: '📅 Cita Agendada Exitosamente',
         cuerpo:
@@ -119,31 +119,164 @@ class _CitasScreenState extends State<CitasScreen> {
     }
   }
 
-  Future<void> _cambiarEstadoCita(int id, String nuevoEstado) async {
+  // Normaliza el estado que viene de MySQL (acepta Completado/Completada, etc.
+  // y trata vacío/NULL como Pendiente).
+  String _normalizarEstado(dynamic raw) {
+    final e = (raw ?? '').toString().trim();
+    switch (e.toLowerCase()) {
+      case '':
+      case 'pendiente':
+      case 'en espera':
+        return 'Pendiente';
+      case 'completada':
+      case 'completado':
+      case 'finalizada':
+      case 'finalizado':
+        return 'Completada';
+      case 'cancelada':
+      case 'cancelado':
+        return 'Cancelada';
+      default:
+        return e;
+    }
+  }
+
+  void _mostrarSnack(String mensaje, Color color, {int segundos = 3}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensaje),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: segundos),
+      ),
+    );
+  }
+
+  // Las notificaciones nunca deben romper el flujo de la pantalla
+  Future<void> _notificar({
+    required int id,
+    required String titulo,
+    required String cuerpo,
+  }) async {
+    try {
+      await NotificationService.mostrarNotificacionInmediata(
+        id: id,
+        titulo: titulo,
+        cuerpo: cuerpo,
+      );
+    } catch (e) {
+      debugPrint('Notificación no disponible: $e');
+    }
+  }
+
+  Future<bool> _enviarEstado(int id, String estado) async {
     final res = await http.put(
       Uri.parse('$_baseUrl/$id/estado'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'estado': nuevoEstado}),
+      body: jsonEncode({'estado': estado}),
     );
+    return res.statusCode == 200 || res.statusCode == 204;
+  }
 
-    if (res.statusCode == 200) {
-      _cargarCitas();
+  // Lee de la BD el estado real de una cita (para confirmar que se guardó)
+  Future<String?> _leerEstadoCita(int id, {bool crudo = false}) async {
+    final citas = await _obtenerCitas();
+    for (final c in citas) {
+      if (c['id'].toString() == id.toString()) {
+        return crudo
+            ? (c['estado'] ?? '').toString().trim()
+            : _normalizarEstado(c['estado']);
+      }
+    }
+    return null;
+  }
 
-      // 🔔 NOTIFICACIONES DE CAMBIO DE ESTADO
+  Future<void> _cambiarEstadoCita(dynamic idRaw, String nuevoEstado) async {
+    final int? id = int.tryParse(idRaw.toString());
+    if (id == null) {
+      _mostrarSnack('ID de cita inválido', Colors.redAccent);
+      return;
+    }
+
+    // El ENUM de citas.estado en MySQL es: 'En Espera', 'En Consulta',
+    // 'En Peluquería', 'Finalizado', ... Un valor que no esté en el ENUM se
+    // guarda como '' sin error, así que se verifica lo guardado y se prueba
+    // con la siguiente variante.
+    final variantes = nuevoEstado == 'Completada'
+        ? ['Finalizado', 'Finalizada', 'Completado', 'Completada']
+        : ['Cancelado', 'Cancelada'];
+
+    try {
+      bool guardado = false;
+      final previo = await _leerEstadoCita(id, crudo: true);
+
+      for (final valor in variantes) {
+        final ok = await _enviarEstado(id, valor);
+        if (!ok) {
+          _mostrarSnack(
+            'Error al actualizar la cita en el servidor',
+            Colors.redAccent,
+          );
+          return;
+        }
+        final actual = await _leerEstadoCita(id);
+        if (actual == nuevoEstado) {
+          guardado = true;
+          break;
+        }
+      }
+
+      if (!guardado) {
+        // Los intentos fallidos dejan el estado en blanco: se restaura el anterior
+        final restaurar =
+            (previo == null || previo.isEmpty || previo == 'Pendiente')
+            ? 'En Espera'
+            : previo;
+        await _enviarEstado(id, restaurar);
+      }
+
+      if (!mounted) return;
+      _cargarCitas(); // refresca la lista con lo que realmente hay en la BD
+
+      if (!guardado) {
+        _mostrarSnack(
+          'No se pudo guardar: el ENUM de citas.estado no tiene un valor para "$nuevoEstado"',
+          Colors.redAccent,
+          segundos: 5,
+        );
+        return;
+      }
+
       if (nuevoEstado == 'Completada') {
-        await NotificationService.mostrarNotificacionInmediata(
+        await _notificar(
           id: id,
           titulo: '✅ Cita Finalizada',
           cuerpo: 'La cita #$id fue marcada como Completada.',
         );
-      } else if (nuevoEstado == 'Cancelada') {
-        await NotificationService.mostrarNotificacionInmediata(
+      } else {
+        await _notificar(
           id: id,
           titulo: '❌ Cita Cancelada',
           cuerpo: 'La cita #$id ha sido cancelada.',
         );
-        await NotificationService.cancelarNotificacion(id);
+        try {
+          await NotificationService.cancelarNotificacion(id);
+        } catch (e) {
+          debugPrint('No se pudo cancelar la notificación: $e');
+        }
       }
+
+      _mostrarSnack(
+        'Cita marcada como $nuevoEstado',
+        nuevoEstado == 'Completada'
+            ? const Color(0xFF0DCF7E)
+            : Colors.redAccent,
+        segundos: 2,
+      );
+    } catch (e) {
+      debugPrint('Error en _cambiarEstadoCita: $e');
+      _mostrarSnack('Error de conexión con el servidor: $e', Colors.redAccent);
     }
   }
 
@@ -508,10 +641,7 @@ class _CitasScreenState extends State<CitasScreen> {
             final mascota = (c['mascota'] ?? '').toString().toLowerCase();
             final servicio = (c['servicio'] ?? '').toString().toLowerCase();
 
-            final rawEst = c['estado']?.toString().trim();
-            final estado = (rawEst == null || rawEst.isEmpty)
-                ? 'Pendiente'
-                : rawEst;
+            final estado = _normalizarEstado(c['estado']);
             final fecha = (c['fecha'] ?? '').toString();
 
             final coincideBusqueda =
@@ -519,8 +649,12 @@ class _CitasScreenState extends State<CitasScreen> {
                 cliente.contains(query) ||
                 mascota.contains(query) ||
                 servicio.contains(query);
+            final esActiva = estado != 'Completada' && estado != 'Cancelada';
             final coincideEstado =
-                _filtroEstado == 'Todos' || estado == _filtroEstado;
+                _filtroEstado == 'Todos' ||
+                (_filtroEstado == 'Pendiente'
+                    ? esActiva
+                    : estado == _filtroEstado);
 
             bool coincideFecha = true;
             if (_mostrarCalendario && _selectedDay != null) {
@@ -533,15 +667,12 @@ class _CitasScreenState extends State<CitasScreen> {
           }).toList();
 
           final pendientes = citas.where((c) {
-            final rawEst = c['estado']?.toString().trim();
-            final st = (rawEst == null || rawEst.isEmpty)
-                ? 'Pendiente'
-                : rawEst;
-            return st == 'Pendiente';
+            final st = _normalizarEstado(c['estado']);
+            return st != 'Completada' && st != 'Cancelada';
           }).length;
 
           final completadas = citas
-              .where((c) => c['estado']?.toString().trim() == 'Completada')
+              .where((c) => _normalizarEstado(c['estado']) == 'Completada')
               .length;
 
           return Column(
@@ -704,11 +835,7 @@ class _CitasScreenState extends State<CitasScreen> {
                           final fecha = cita['fecha'] ?? '';
                           final hora = cita['hora'] ?? '';
 
-                          final rawEstado = cita['estado']?.toString().trim();
-                          final estado =
-                              (rawEstado == null || rawEstado.isEmpty)
-                              ? 'Pendiente'
-                              : rawEstado;
+                          final estado = _normalizarEstado(cita['estado']);
 
                           Color badgeColor = Colors.orangeAccent;
                           if (estado == 'Completada') badgeColor = primaryColor;
@@ -810,7 +937,8 @@ class _CitasScreenState extends State<CitasScreen> {
                                     ),
                                     const Spacer(),
 
-                                    if (estado == 'Pendiente') ...[
+                                    if (estado != 'Completada' &&
+                                        estado != 'Cancelada') ...[
                                       IconButton(
                                         icon: const Icon(
                                           Icons.check_circle,

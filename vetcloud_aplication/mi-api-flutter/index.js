@@ -195,7 +195,7 @@ app.get('/api/citas', (req, res) => {
       DATE_FORMAT(ci.fecha_cita, '%Y-%m-%d') AS fecha,
       TIME_FORMAT(ci.fecha_cita, '%H:%i') AS hora,
       DATE_FORMAT(ci.fecha_cita, '%d/%m/%Y %h:%i %p') AS fecha_formateada,
-      COALESCE(ci.estado, 'Pendiente') AS estado,
+      COALESCE(NULLIF(ci.estado, ''), 'En Espera') AS estado,
       COALESCE(ci.observaciones, 'Sin observaciones') AS notas
     FROM citas ci
     LEFT JOIN mascotas m ON ci.id_mascota = m.id_mascota
@@ -223,7 +223,7 @@ app.post('/api/citas', (req, res) => {
 
   const sql = `
     INSERT INTO citas (id_mascota, fecha_cita, tipo_servicio, estado, observaciones)
-    VALUES (?, ?, ?, 'Pendiente', ?)
+    VALUES (?, ?, ?, 'En Espera', ?)
   `;
   
   db.query(sql, [mascotaId, fechaCita, servicio, notas || 'Sin observaciones'], (err, result) => {

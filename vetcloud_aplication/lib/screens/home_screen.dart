@@ -22,7 +22,13 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _futureDatosHome = _cargarDatosMetrics();
+    _refrescarDashboard();
+  }
+
+  void _refrescarDashboard() {
+    setState(() {
+      _futureDatosHome = _cargarDatosMetrics();
+    });
   }
 
   String _obtenerIniciales(String nombre) {
@@ -32,6 +38,29 @@ class _HomeScreenState extends State<HomeScreen> {
       return '${partes[0][0]}${partes[1][0]}'.toUpperCase();
     }
     return partes[0][0].toUpperCase();
+  }
+
+  // Normaliza los valores reales del ENUM de MySQL ('En Espera', 'Finalizado', 'Cancelado')
+  String _normalizarEstado(dynamic raw) {
+    final e = (raw ?? '').toString().trim().toLowerCase();
+    switch (e) {
+      case '':
+      case 'pendiente':
+      case 'en espera':
+      case 'en consulta':
+      case 'en peluquería':
+        return 'Pendiente';
+      case 'completada':
+      case 'completado':
+      case 'finalizada':
+      case 'finalizado':
+        return 'Completada';
+      case 'cancelada':
+      case 'cancelado':
+        return 'Cancelada';
+      default:
+        return 'Pendiente';
+    }
   }
 
   Future _cargarDatosMetrics() async {
@@ -48,10 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
       Map<String, int> serviciosMap = {};
 
       for (var c in citas) {
-        final String estadoRaw = c['estado']?.toString() ?? '';
-        final String st = estadoRaw.trim().isEmpty
-            ? 'Pendiente'
-            : estadoRaw.trim();
+        final String st = _normalizarEstado(c['estado']);
 
         if (st == 'Pendiente') {
           pendientes++;
@@ -101,15 +127,10 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         backgroundColor: cardBg,
         elevation: 0,
-        automaticallyImplyLeading:
-            false, // 👈 Quita la flecha automática "Back"
+        automaticallyImplyLeading: false,
         leading: const Padding(
           padding: EdgeInsets.only(left: 12.0),
-          child: Icon(
-            Icons.pets, // 👈 Icono de la pata de la mascota
-            color: primaryColor,
-            size: 26,
-          ),
+          child: Icon(Icons.pets, color: primaryColor, size: 26),
         ),
         title: const Text(
           'VetCloud Dashboard',
@@ -133,9 +154,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (value == 'logout') {
                   _cerrarSesion();
                 } else if (value == 'refresh') {
-                  setState(() {
-                    _futureDatosHome = _cargarDatosMetrics();
-                  });
+                  _refrescarDashboard();
                 }
               },
               child: CircleAvatar(
@@ -229,191 +248,211 @@ class _HomeScreenState extends State<HomeScreen> {
           final int canceladas = data['canceladas'];
           final Map<String, int> servicios = data['serviciosMap'];
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: _MetricCard(
-                        title: 'Clientes',
-                        value: '${data['totalClientes']}',
-                        icon: Icons.people,
-                        color: Colors.blueAccent,
+          return RefreshIndicator(
+            color: primaryColor,
+            backgroundColor: cardBg,
+            onRefresh: () async => _refrescarDashboard(),
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _MetricCard(
+                          title: 'Clientes',
+                          value: '${data['totalClientes']}',
+                          icon: Icons.people,
+                          color: Colors.blueAccent,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _MetricCard(
-                        title: 'Total Citas',
-                        value: '${data['totalCitas']}',
-                        icon: Icons.calendar_month,
-                        color: primaryColor,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _MetricCard(
+                          title: 'Total Citas',
+                          value: '${data['totalCitas']}',
+                          icon: Icons.calendar_month,
+                          color: primaryColor,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
 
-                const Text(
-                  'Estado de la Agenda',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                  const Text(
+                    'Estado de la Agenda',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  height: 220,
-                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
-                  decoration: BoxDecoration(
-                    color: cardBg,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white10),
-                  ),
-                  child: BarChart(
-                    BarChartData(
-                      alignment: BarChartAlignment.spaceAround,
-                      maxY:
-                          ([
-                                    pendientes,
-                                    completadas,
-                                    canceladas,
-                                    5,
-                                  ].reduce((a, b) => a > b ? a : b) +
-                                  2)
-                              .toDouble(),
-                      barTouchData: const BarTouchData(enabled: false),
-                      titlesData: FlTitlesData(
-                        show: true,
-                        topTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: false),
-                        ),
-                        rightTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: false),
-                        ),
-                        leftTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: false),
-                        ),
-                        bottomTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                            showTitles: true,
-                            getTitlesWidget: (value, meta) {
-                              switch (value.toInt()) {
-                                case 0:
-                                  return const Text(
-                                    'Pendiente',
-                                    style: TextStyle(
-                                      color: Colors.orangeAccent,
-                                      fontSize: 11,
-                                    ),
-                                  );
-                                case 1:
-                                  return const Text(
-                                    'Completada',
-                                    style: TextStyle(
-                                      color: primaryColor,
-                                      fontSize: 11,
-                                    ),
-                                  );
-                                case 2:
-                                  return const Text(
-                                    'Cancelada',
-                                    style: TextStyle(
-                                      color: Colors.redAccent,
-                                      fontSize: 11,
-                                    ),
-                                  );
-                                default:
-                                  return const Text('');
-                              }
+                  const SizedBox(height: 12),
+                  Container(
+                    height: 220,
+                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+                    decoration: BoxDecoration(
+                      color: cardBg,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: BarChart(
+                      BarChartData(
+                        alignment: BarChartAlignment.spaceAround,
+                        maxY:
+                            ([
+                                      pendientes,
+                                      completadas,
+                                      canceladas,
+                                      5,
+                                    ].reduce((a, b) => a > b ? a : b) +
+                                    2)
+                                .toDouble(),
+                        barTouchData: BarTouchData(
+                          enabled: true,
+                          touchTooltipData: BarTouchTooltipData(
+                            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                              return BarTooltipItem(
+                                '${rod.toY.toInt()} citas',
+                                const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              );
                             },
                           ),
                         ),
+                        titlesData: FlTitlesData(
+                          show: true,
+                          topTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                          rightTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                          leftTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              getTitlesWidget: (value, meta) {
+                                switch (value.toInt()) {
+                                  case 0:
+                                    return Text(
+                                      'Pendiente ($pendientes)',
+                                      style: const TextStyle(
+                                        color: Colors.orangeAccent,
+                                        fontSize: 11,
+                                      ),
+                                    );
+                                  case 1:
+                                    return Text(
+                                      'Completada ($completadas)',
+                                      style: const TextStyle(
+                                        color: primaryColor,
+                                        fontSize: 11,
+                                      ),
+                                    );
+                                  case 2:
+                                    return Text(
+                                      'Cancelada ($canceladas)',
+                                      style: const TextStyle(
+                                        color: Colors.redAccent,
+                                        fontSize: 11,
+                                      ),
+                                    );
+                                  default:
+                                    return const Text('');
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                        gridData: const FlGridData(show: false),
+                        borderData: FlBorderData(show: false),
+                        barGroups: [
+                          BarChartGroupData(
+                            x: 0,
+                            barRods: [
+                              BarChartRodData(
+                                toY: pendientes.toDouble(),
+                                color: Colors.orangeAccent,
+                                width: 22,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ],
+                          ),
+                          BarChartGroupData(
+                            x: 1,
+                            barRods: [
+                              BarChartRodData(
+                                toY: completadas.toDouble(),
+                                color: primaryColor,
+                                width: 22,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ],
+                          ),
+                          BarChartGroupData(
+                            x: 2,
+                            barRods: [
+                              BarChartRodData(
+                                toY: canceladas.toDouble(),
+                                color: Colors.redAccent,
+                                width: 22,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                      gridData: const FlGridData(show: false),
-                      borderData: FlBorderData(show: false),
-                      barGroups: [
-                        BarChartGroupData(
-                          x: 0,
-                          barRods: [
-                            BarChartRodData(
-                              toY: pendientes.toDouble(),
-                              color: Colors.orangeAccent,
-                              width: 22,
-                              borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  const Text(
+                    'Servicios Más Solicitados',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: cardBg,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          height: 180,
+                          child: PieChart(
+                            PieChartData(
+                              sectionsSpace: 3,
+                              centerSpaceRadius: 40,
+                              sections: _generarSeccionesPie(servicios),
                             ),
-                          ],
+                          ),
                         ),
-                        BarChartGroupData(
-                          x: 1,
-                          barRods: [
-                            BarChartRodData(
-                              toY: completadas.toDouble(),
-                              color: primaryColor,
-                              width: 22,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ],
-                        ),
-                        BarChartGroupData(
-                          x: 2,
-                          barRods: [
-                            BarChartRodData(
-                              toY: canceladas.toDouble(),
-                              color: Colors.redAccent,
-                              width: 22,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ],
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 6,
+                          children: _generarLeyendaPie(servicios),
                         ),
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 20),
-
-                const Text(
-                  'Servicios Más Solicitados',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: cardBg,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white10),
-                  ),
-                  child: Column(
-                    children: [
-                      SizedBox(
-                        height: 180,
-                        child: PieChart(
-                          PieChartData(
-                            sectionsSpace: 3,
-                            centerSpaceRadius: 40,
-                            sections: _generarSeccionesPie(servicios),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 6,
-                        children: _generarLeyendaPie(servicios),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },
@@ -486,7 +525,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(width: 4),
           Text(
-            e.key,
+            '${e.key} (${e.value})',
             style: const TextStyle(color: Colors.white70, fontSize: 11),
           ),
         ],
