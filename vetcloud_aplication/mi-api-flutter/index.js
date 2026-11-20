@@ -37,6 +37,72 @@ db.getConnection((err, conn) => {
   conn.release();
 });
 
+// ==========================================
+// BITÁCORA Y REGISTRO DE ACTIVIDAD
+// ==========================================
+// Render está detrás de un proxy: así req.ip trae la IP real del usuario.
+app.set('trust proxy', true);
+
+const ZONA = 'America/Caracas';
+const ahora = () => new Date().toLocaleString('sv-SE', { timeZone: ZONA }); // YYYY-MM-DD HH:MM:SS
+
+// La app no envía token, así que tras un login exitoso se recuerda "esta IP = este usuario"
+// durante 12 horas (en memoria: se borra si Render reinicia o se duerme).
+// Si la app envía el encabezado "x-usuario", ese valor tiene prioridad.
+const SESION_MS = 12 * 60 * 60 * 1000;
+const sesionesPorIp = new Map();
+
+const ipDe = (req) => req.ip || req.socket.remoteAddress || 'desconocida';
+
+function usuarioDe(req) {
+  const cabecera = req.headers['x-usuario'];
+  if (cabecera) return String(cabecera).slice(0, 100);
+  const sesion = sesionesPorIp.get(ipDe(req));
+  if (sesion && Date.now() - sesion.t < SESION_MS) return sesion.usuario;
+  return 'anónimo';
+}
+
+// Tabla de bitácora (se crea sola si no existe)
+db.query(
+  `CREATE TABLE IF NOT EXISTS bitacora (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    fecha DATETIME NOT NULL,
+    usuario VARCHAR(100) NOT NULL,
+    accion VARCHAR(60) NOT NULL,
+    detalle VARCHAR(500) DEFAULT NULL,
+    ip VARCHAR(60) DEFAULT NULL
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  (err) => {
+    if (err) console.error('❌ No se pudo crear la tabla bitacora:', err.message);
+  }
+);
+
+// Guarda una acción en la bitácora. Si falla, nunca interrumpe la respuesta al usuario.
+function registrar(req, accion, detalle = '', usuarioForzado = null) {
+  const usuario = usuarioForzado || usuarioDe(req);
+  db.query(
+    'INSERT INTO bitacora (fecha, usuario, accion, detalle, ip) VALUES (?, ?, ?, ?, ?)',
+    [ahora(), usuario, accion, String(detalle).slice(0, 500), ipDe(req)],
+    (err) => {
+      if (err) console.error('❌ No se pudo guardar en bitácora:', err.message);
+    }
+  );
+}
+
+// Registro de TODAS las peticiones en los logs de Render (nunca se imprime el body: hay contraseñas).
+// Se omite "/" porque es la ruta que visita el monitor para mantener el servidor despierto.
+app.use((req, res, next) => {
+  if (req.path === '/') return next();
+  const inicio = Date.now();
+  res.on('finish', () => {
+    console.log(
+      `[${ahora()}] ${req.method} ${req.originalUrl} → ${res.statusCode} ` +
+      `(${Date.now() - inicio} ms) | usuario: ${usuarioDe(req)} | ip: ${ipDe(req)}`
+    );
+  });
+  next();
+});
+
 // Ruta raíz de prueba
 app.get('/', (req, res) => {
   res.json({ mensaje: 'API VetCloud funcionando correctamente' });
@@ -123,6 +189,7 @@ app.post('/api/clientes', (req, res) => {
     
     console.log(`\n👤 NUEVO CLIENTE REGISTRADO (#${result.insertId})`);
     console.log(`> Cédula: ${cedula} | Nombre: ${nombre}`);
+    registrar(req, 'CLIENTE_CREADO', `${nombre} (${cedula})`);
 
     res.status(201).json({ 
       mensaje: 'Cliente registrado con éxito',
@@ -137,7 +204,7 @@ app.post('/api/clientes', (req, res) => {
 
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
-  const horaIntento = new Date().toLocaleTimeString();
+  const horaIntento = ahora();
 
   console.log(`\n========================================`);
   console.log(`[${horaIntento}] INTENTO DE INICIO DE SESIÓN`);
@@ -154,6 +221,7 @@ app.post('/api/login', (req, res) => {
 
     if (results.length === 0) {
       console.log(`⚠️  Resultado: USUARIO NO ENCONTRADO ("${username}")`);
+      registrar(req, 'LOGIN_FALLIDO', 'Usuario no registrado', String(username || '').slice(0, 100));
       return res.status(401).json({
         exito: false,
         mensaje: 'Usuario o correo no registrado'
@@ -165,6 +233,8 @@ app.post('/api/login', (req, res) => {
 
     if (esPasswordValida) {
       console.log(`✅ Resultado: ACCESO CONCEDIDO a ${usuario.username} (${usuario.email})`);
+      sesionesPorIp.set(ipDe(req), { usuario: usuario.username, t: Date.now() });
+      registrar(req, 'LOGIN', usuario.email, usuario.username);
       return res.status(200).json({
         exito: true,
         mensaje: 'Inicio de sesión exitoso',
@@ -180,6 +250,7 @@ app.post('/api/login', (req, res) => {
       });
     } else {
       console.log(`❌ Resultado: CONTRASEÑA INCORRECTA para ${usuario.username}`);
+      registrar(req, 'LOGIN_FALLIDO', 'Contraseña incorrecta', usuario.username);
       return res.status(401).json({
         exito: false,
         mensaje: 'Contraseña incorrecta'
@@ -225,7 +296,7 @@ app.get('/api/citas', (req, res) => {
 // CREAR una nueva cita (POST)
 app.post('/api/citas', (req, res) => {
   const { id_mascota, servicio, fecha, hora, notas } = req.body;
-  const horaRegistro = new Date().toLocaleTimeString();
+  const horaRegistro = ahora();
 
   // Se formatea fecha y hora al standard DATETIME 'YYYY-MM-DD HH:MM:SS'
   const fechaCita = `${fecha} ${hora}`;
@@ -243,6 +314,7 @@ app.post('/api/citas', (req, res) => {
     }
     console.log(`\n📅 [${horaRegistro}] NUEVA CITA REGISTRADA (#${result.insertId})`);
     console.log(`> Mascota ID: ${mascotaId} | Servicio: ${servicio} | Fecha/Hora: ${fechaCita}`);
+    registrar(req, 'CITA_CREADA', `#${result.insertId} | ${servicio} | ${fechaCita}`);
     
     res.status(201).json({ mensaje: 'Cita agendada con éxito', id: result.insertId });
   });
@@ -252,7 +324,7 @@ app.post('/api/citas', (req, res) => {
 app.put('/api/citas/:id/estado', (req, res) => {
   const { id } = req.params;
   const { estado } = req.body;
-  const horaCambio = new Date().toLocaleTimeString();
+  const horaCambio = ahora();
 
   const sql = 'UPDATE citas SET estado = ? WHERE id_cita = ?';
   db.query(sql, [estado, id], (err) => {
@@ -262,6 +334,7 @@ app.put('/api/citas/:id/estado', (req, res) => {
     }
     console.log(`\n🔄 [${horaCambio}] ESTADO DE CITA ACTUALIZADO`);
     console.log(`> Cita ID #${id} cambiada a: "${estado}"`);
+    registrar(req, 'CITA_ESTADO', `Cita #${id} → ${estado}`);
     
     res.json({ mensaje: 'Estado actualizado correctamente' });
   });
@@ -300,6 +373,7 @@ app.post('/api/productos', (req, res) => {
         }
         return res.status(500).json({ mensaje: 'Error al registrar el producto', error: err.message });
       }
+      registrar(req, 'PRODUCTO_CREADO', `${nombre} (${codigo})`);
       res.status(201).json({ 
         mensaje: 'Producto creado exitosamente', 
         id: result.insertId 
@@ -319,6 +393,7 @@ app.put('/api/productos/:id/stock', (req, res) => {
     if (err) {
       return res.status(500).json({ mensaje: 'Error al actualizar el stock', error: err.message });
     }
+    registrar(req, 'STOCK_AJUSTE', `Producto #${id}: ${Number(cantidad) > 0 ? '+' : ''}${cantidad}`);
     res.json({ mensaje: 'Stock actualizado con éxito' });
   });
 });
@@ -330,7 +405,7 @@ app.put('/api/productos/:id/stock', (req, res) => {
 // PROCESAR FACTURA / VENTA (POST)
 app.post('/api/ventas', (req, res) => {
   const { cliente, items, subtotal, iva, total, metodo_pago } = req.body;
-  const fecha = new Date().toLocaleString('sv-SE', { timeZone: 'America/Caracas' }); // YYYY-MM-DD HH:MM:SS
+  const fecha = ahora();
 
   const sqlVenta = 'INSERT INTO ventas (cliente, fecha, subtotal, iva, total, metodo_pago) VALUES (?, ?, ?, ?, ?, ?)';
   
@@ -354,6 +429,7 @@ app.post('/api/ventas', (req, res) => {
 
     console.log(`\n🧾 [${fecha}] NUEVA FACTURA REGISTRADA (#${ventaId})`);
     console.log(`> Cliente: ${cliente} | Total: $${total} USD (${metodo_pago})`);
+    registrar(req, 'VENTA', `#${ventaId} | ${cliente} | $${total} (${metodo_pago})`);
 
     res.status(201).json({ mensaje: 'Factura procesada con éxito', ventaId });
   });
@@ -376,7 +452,7 @@ app.get('/api/ventas', (req, res) => {
 // ==========================================
 app.post('/api/register', async (req, res) => {
   const { username, email, password } = req.body;
-  const horaRegistro = new Date().toLocaleTimeString();
+  const horaRegistro = ahora();
 
   if (!username || !email || !password) {
     return res.status(400).json({
@@ -414,6 +490,7 @@ app.post('/api/register', async (req, res) => {
 
         console.log(`\n🆕 [${horaRegistro}] NUEVO USUARIO REGISTRADO (#${result.insertId})`);
         console.log(`> Usuario: ${username} | Email: ${email}`);
+        registrar(req, 'USUARIO_REGISTRADO', `${username} (${email})`, username);
 
         return res.status(201).json({
           exito: true,
