@@ -1,16 +1,21 @@
 {
   "name": "mi-api-flutter",
   "version": "1.0.0",
-  "description": "",
+  "description": "API VetCloud",
   "main": "index.js",
   "scripts": {
+    "start": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
+    "bcryptjs": "^2.4.3",
     "cors": "^2.8.6",
     "express": "^5.3.0",
     "mysql2": "^3.24.6"

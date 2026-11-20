@@ -9,22 +9,32 @@ const app = express();
 app.use(cors());
 app.use(express.json()); // Permite recibir datos en formato JSON
 
-// Configuración de la conexión a MySQL en XAMPP
-const db = mysql.createConnection({
-  host: 'localhost',
-  user: 'root',       // Usuario por defecto de XAMPP
-  password: '',       // Contraseña por defecto de XAMPP (vacía)
-  database: 'veterinaria_unimar',
-  port: 3306
+// Configuración de la conexión a MySQL.
+// En tu PC usa XAMPP por defecto; en Render/TiDB se configura con variables de entorno.
+// Se usa un POOL (no una sola conexión) para que el servidor no se rompa si MySQL
+// cierra la conexión por inactividad.
+const db = mysql.createPool({
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'veterinaria_unimar',
+  port: Number(process.env.DB_PORT) || 3306,
+  ssl: process.env.DB_SSL === 'true'
+    ? { minVersion: 'TLSv1.2', rejectUnauthorized: true }
+    : undefined,
+  waitForConnections: true,
+  connectionLimit: 5,
+  enableKeepAlive: true,
 });
 
-// Probar conexión a la Base de Datos
-db.connect((err) => {
+// Probar conexión a la Base de Datos al arrancar
+db.getConnection((err, conn) => {
   if (err) {
     console.error('Error al conectar a MySQL:', err.message);
     return;
   }
-  console.log('¡Conexión exitosa a MySQL de XAMPP!');
+  console.log('¡Conexión exitosa a MySQL!');
+  conn.release();
 });
 
 // Ruta raíz de prueba
@@ -320,7 +330,7 @@ app.put('/api/productos/:id/stock', (req, res) => {
 // PROCESAR FACTURA / VENTA (POST)
 app.post('/api/ventas', (req, res) => {
   const { cliente, items, subtotal, iva, total, metodo_pago } = req.body;
-  const fecha = new Date().toLocaleString();
+  const fecha = new Date().toLocaleString('sv-SE', { timeZone: 'America/Caracas' }); // YYYY-MM-DD HH:MM:SS
 
   const sqlVenta = 'INSERT INTO ventas (cliente, fecha, subtotal, iva, total, metodo_pago) VALUES (?, ?, ?, ?, ?, ?)';
   
@@ -362,9 +372,66 @@ app.get('/api/ventas', (req, res) => {
 });
 
 // ==========================================
+// ENDPOINT DE REGISTRO DE USUARIOS (POST)
+// ==========================================
+app.post('/api/register', async (req, res) => {
+  const { username, email, password } = req.body;
+  const horaRegistro = new Date().toLocaleTimeString();
+
+  if (!username || !email || !password) {
+    return res.status(400).json({
+      exito: false,
+      mensaje: 'Todos los campos son obligatorios'
+    });
+  }
+
+  try {
+    // Verificar si el usuario o correo ya existen
+    const sqlCheck = 'SELECT id FROM usuarios WHERE username = ? OR email = ?';
+    db.query(sqlCheck, [username, email], async (err, results) => {
+      if (err) {
+        console.error('❌ Error en MySQL:', err.message);
+        return res.status(500).json({ exito: false, mensaje: 'Error interno en el servidor' });
+      }
+
+      if (results.length > 0) {
+        return res.status(409).json({
+          exito: false,
+          mensaje: 'El usuario o correo electrónico ya está registrado'
+        });
+      }
+
+      // Encriptar contraseña con bcryptjs
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(password, salt);
+
+      const sqlInsert = 'INSERT INTO usuarios (username, email, password) VALUES (?, ?, ?)';
+      db.query(sqlInsert, [username, email, hashedPassword], (errInsert, result) => {
+        if (errInsert) {
+          console.error('❌ Error al registrar usuario:', errInsert.message);
+          return res.status(500).json({ exito: false, mensaje: 'Error al guardar el usuario' });
+        }
+
+        console.log(`\n🆕 [${horaRegistro}] NUEVO USUARIO REGISTRADO (#${result.insertId})`);
+        console.log(`> Usuario: ${username} | Email: ${email}`);
+
+        return res.status(201).json({
+          exito: true,
+          mensaje: 'Usuario creado exitosamente',
+          id: result.insertId
+        });
+      });
+    });
+  } catch (error) {
+    console.error('❌ Error encriptando contraseña:', error);
+    return res.status(500).json({ exito: false, mensaje: 'Error interno al procesar la solicitud' });
+  }
+});
+
+// ==========================================
 // INICIO DEL SERVIDOR
 // ==========================================
-const PORT = 3000;
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Servidor corriendo en el puerto ${PORT}`);
 });

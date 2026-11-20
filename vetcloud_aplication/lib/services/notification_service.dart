@@ -11,6 +11,13 @@ class NotificationService {
     // Si la app se ejecuta en Web (Chrome), se ignora el envío nativo
     if (kIsWeb) return;
 
+    // Asegura que el permiso esté concedido en Android 13+
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.requestNotificationsPermission();
+
     const AndroidNotificationDetails androidDetails =
         AndroidNotificationDetails(
           'citas_channel',
@@ -27,9 +34,11 @@ class NotificationService {
       iOS: DarwinNotificationDetails(),
     );
 
-    // 🟢 Sintaxis con parámetros nombrados id:, title:, body:
+    // Asegura un ID entero de 32 bits válido para Android
+    final int safeId = id.abs() % 2147483647;
+
     await flutterLocalNotificationsPlugin.show(
-      id: id,
+      id: safeId,
       title: titulo,
       body: cuerpo,
       notificationDetails: notificationDetails,
@@ -39,7 +48,7 @@ class NotificationService {
   static Future<void> cancelarNotificacion(int id) async {
     if (kIsWeb) return;
 
-    // 🟢 Sintaxis con parámetro nombrado id:
-    await flutterLocalNotificationsPlugin.cancel(id: id);
+    final int safeId = id.abs() % 2147483647;
+    await flutterLocalNotificationsPlugin.cancel(id: safeId);
   }
 }

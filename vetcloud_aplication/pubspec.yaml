@@ -41,6 +41,9 @@ dependencies:
   http: ^1.6.0
   pdf: ^3.10.8
   printing: ^5.11.1
+  flutter_launcher_icons: ^0.14.4
+   
+   
 
 dev_dependencies:
   table_calendar: ^3.3.0
@@ -54,6 +57,10 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/vetcloud.png"
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 

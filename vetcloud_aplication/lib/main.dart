@@ -28,10 +28,16 @@ void main() async {
           iOS: initializationSettingsDarwin,
         );
 
-    // 🟢 Sintaxis actualizada con el parámetro nombrado settings:
     await flutterLocalNotificationsPlugin.initialize(
       settings: initializationSettings,
     );
+
+    // Solicitar permiso de notificaciones en tiempo de ejecución (Android 13+)
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.requestNotificationsPermission();
   }
 
   runApp(const MyApp());
